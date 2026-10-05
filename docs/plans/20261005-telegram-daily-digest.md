@@ -70,11 +70,11 @@
 - Modify: `internal/config/config.go`
 - Modify: `internal/config/config_test.go` (or the existing telegram config test file)
 
-- [ ] add raw strings `DigestTime` and `DigestTZ` to `config.TelegramConfig`
-- [ ] add `DailyDigestTime *string` and `DailyDigestTZ *string` to `telegramBlock` and copy them in `applyTelegramBlock` (no validation, no stderr output)
-- [ ] extend `SaveTelegram` unconditionally: it builds a fresh four-key map today and would drop the new keys, so write `daily_digest_time` / `daily_digest_tz` from the raw strings (omit when empty)
-- [ ] write tests: keys parsed, keys absent, `SaveTelegram` round-trip preserves both keys and foreign keys
-- [ ] run tests - must pass before task 2
+- [x] add raw strings `DigestTime` and `DigestTZ` to `config.TelegramConfig`
+- [x] add `DailyDigestTime *string` and `DailyDigestTZ *string` to `telegramBlock` and copy them in `applyTelegramBlock` (no validation, no stderr output)
+- [x] extend `SaveTelegram` unconditionally: it builds a fresh four-key map today and would drop the new keys, so write `daily_digest_time` / `daily_digest_tz` from the raw strings (omit when empty)
+- [x] write tests: keys parsed, keys absent, `SaveTelegram` round-trip preserves both keys and foreign keys
+- [x] run tests - must pass before task 2
 
 ### Task 2: Validate in cmd, plumb into the telegram package, show in `status`
 

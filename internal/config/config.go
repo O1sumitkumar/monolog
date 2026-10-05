@@ -94,6 +94,11 @@ type TelegramConfig struct {
 	AllowedUserIDs []int64
 	PullInterval   time.Duration
 	BrowseLimit    int
+	// DigestTime ("HH:MM") and DigestTZ (IANA name) are raw, unvalidated
+	// strings; cmd/telegram validates them. Empty means "digest off" and
+	// "host local zone" respectively.
+	DigestTime string
+	DigestTZ   string
 }
 
 // defaultTelegramConfig returns the documented defaults for the in-session
@@ -299,6 +304,8 @@ type telegramBlock struct {
 	AllowedUserIDs      *[]int64 `json:"allowed_user_ids,omitempty"`
 	PullIntervalSeconds *int     `json:"pull_interval_seconds,omitempty"`
 	BrowseLimit         *int     `json:"browse_limit,omitempty"`
+	DailyDigestTime     *string  `json:"daily_digest_time,omitempty"`
+	DailyDigestTZ       *string  `json:"daily_digest_tz,omitempty"`
 }
 
 // resetTelegramCfgToDefaults sets telegramCfg back to the documented
@@ -327,6 +334,12 @@ func applyTelegramBlock(b telegramBlock) {
 	}
 	if b.BrowseLimit != nil && *b.BrowseLimit > 0 {
 		telegramCfg.BrowseLimit = *b.BrowseLimit
+	}
+	if b.DailyDigestTime != nil {
+		telegramCfg.DigestTime = *b.DailyDigestTime
+	}
+	if b.DailyDigestTZ != nil {
+		telegramCfg.DigestTZ = *b.DailyDigestTZ
 	}
 }
 
@@ -461,7 +474,9 @@ func SaveEmail(monologDir string, ec EmailConfig) error {
 //	    "enabled": true,
 //	    "allowed_user_ids": [123456789],
 //	    "pull_interval_seconds": 30,
-//	    "browse_limit": 20
+//	    "browse_limit": 20,
+//	    "daily_digest_time": "08:00",   (optional)
+//	    "daily_digest_tz": "Europe/Riga" (optional)
 //	  }
 //	}
 //
@@ -484,6 +499,12 @@ func SaveTelegram(monologDir string, tc TelegramConfig) error {
 		"allowed_user_ids":      ids,
 		"pull_interval_seconds": int(tc.PullInterval / time.Second),
 		"browse_limit":          tc.BrowseLimit,
+	}
+	if tc.DigestTime != "" {
+		block["daily_digest_time"] = tc.DigestTime
+	}
+	if tc.DigestTZ != "" {
+		block["daily_digest_tz"] = tc.DigestTZ
 	}
 	existing["telegram"] = block
 

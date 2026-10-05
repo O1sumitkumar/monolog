@@ -1212,3 +1212,102 @@ func TestSaveDoesNotAddAutoPushWhenAbsent(t *testing.T) {
 		t.Errorf("Save wrote an auto_push key (%v); it must stay read-modify-write only", cfg["auto_push"])
 	}
 }
+
+func writeConfigAny(t *testing.T, tmpDir string, content map[string]any) {
+	t.Helper()
+	monologDir := filepath.Join(tmpDir, ".monolog")
+	if err := os.MkdirAll(monologDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	data, err := json.Marshal(content)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(monologDir, "config.json"), data, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+}
+
+func TestLoadTelegramDigestKeys(t *testing.T) {
+	resetTelegramCfg(t)
+	resetDateFormat(t)
+	tmpDir := t.TempDir()
+	writeConfigAny(t, tmpDir, map[string]any{
+		"telegram": map[string]any{
+			"enabled":           true,
+			"daily_digest_time": "08:30",
+			"daily_digest_tz":   "Europe/Riga",
+		},
+	})
+	if err := Load(tmpDir); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	got := Telegram()
+	if got.DigestTime != "08:30" || got.DigestTZ != "Europe/Riga" {
+		t.Errorf("digest = %q/%q, want 08:30/Europe/Riga", got.DigestTime, got.DigestTZ)
+	}
+}
+
+func TestLoadTelegramDigestKeysAbsent(t *testing.T) {
+	resetTelegramCfg(t)
+	resetDateFormat(t)
+	tmpDir := t.TempDir()
+	writeConfigAny(t, tmpDir, map[string]any{
+		"telegram": map[string]any{"enabled": true},
+	})
+	if err := Load(tmpDir); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	got := Telegram()
+	if got.DigestTime != "" || got.DigestTZ != "" {
+		t.Errorf("digest = %q/%q, want empty", got.DigestTime, got.DigestTZ)
+	}
+}
+
+func TestSaveTelegramDigestRoundTrip(t *testing.T) {
+	resetTelegramCfg(t)
+	resetDateFormat(t)
+	tmpDir := t.TempDir()
+	writeConfigAny(t, tmpDir, map[string]any{"editor": "vim"})
+	tc := TelegramConfig{
+		Enabled: true, PullInterval: 30 * time.Second, BrowseLimit: 20,
+		DigestTime: "07:15", DigestTZ: "Europe/Riga",
+	}
+	if err := SaveTelegram(tmpDir, tc); err != nil {
+		t.Fatalf("SaveTelegram: %v", err)
+	}
+	resetTelegramCfgToDefaults()
+	if err := Load(tmpDir); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	got := Telegram()
+	if got.DigestTime != "07:15" || got.DigestTZ != "Europe/Riga" {
+		t.Errorf("digest after round-trip = %q/%q", got.DigestTime, got.DigestTZ)
+	}
+	data, err := os.ReadFile(filepath.Join(tmpDir, ".monolog", "config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatal(err)
+	}
+	if m["editor"] != "vim" {
+		t.Errorf("foreign key lost: %v", m)
+	}
+
+	// Empty strings are omitted from disk.
+	if err := SaveTelegram(tmpDir, TelegramConfig{PullInterval: 30 * time.Second, BrowseLimit: 20}); err != nil {
+		t.Fatal(err)
+	}
+	data, _ = os.ReadFile(filepath.Join(tmpDir, ".monolog", "config.json"))
+	m = map[string]any{}
+	_ = json.Unmarshal(data, &m)
+	blk := m["telegram"].(map[string]any)
+	if _, ok := blk["daily_digest_time"]; ok {
+		t.Errorf("daily_digest_time should be omitted when empty")
+	}
+	if _, ok := blk["daily_digest_tz"]; ok {
+		t.Errorf("daily_digest_tz should be omitted when empty")
+	}
+}
