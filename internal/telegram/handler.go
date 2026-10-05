@@ -82,6 +82,13 @@ type TelegramConfig struct {
 	AllowedUserIDs []int64
 	PullInterval   time.Duration
 	BrowseLimit    int
+
+	// Daily digest, already validated by the cmd layer. A nil
+	// DigestLocation means time.Local.
+	DigestEnabled  bool
+	DigestHour     int
+	DigestMinute   int
+	DigestLocation *time.Location
 }
 
 // NewHandler constructs a Handler. The `now` parameter is optional — a nil

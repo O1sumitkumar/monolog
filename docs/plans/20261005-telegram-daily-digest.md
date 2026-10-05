@@ -83,11 +83,11 @@
 - Modify: `cmd/telegram.go`
 - Modify: `cmd/telegram_test.go`
 
-- [ ] add `DigestEnabled bool`, `DigestHour`, `DigestMinute int`, `DigestLocation *time.Location` to `telegram.TelegramConfig`
-- [ ] in `cmd/telegram.go` parse `HH:MM` and resolve the tz; on error warn to the serve writer and leave the digest disabled; import `time/tzdata`
-- [ ] print `daily_digest: HH:MM <tz>`, `daily_digest: off` or `daily_digest: invalid (<reason>)` in `monolog telegram status`
-- [ ] write tests: valid, empty (off), bad time, unknown tz, empty tz uses local, both `status` outputs
-- [ ] run tests - must pass before task 3
+- [x] add `DigestEnabled bool`, `DigestHour`, `DigestMinute int`, `DigestLocation *time.Location` to `telegram.TelegramConfig`
+- [x] in `cmd/telegram.go` parse `HH:MM` and resolve the tz; on error warn to the serve writer and leave the digest disabled; import `time/tzdata`
+- [x] print `daily_digest: HH:MM <tz>`, `daily_digest: off` or `daily_digest: invalid (<reason>)` in `monolog telegram status`
+- [x] write tests: valid, empty (off), bad time, unknown tz, empty tz uses local, both `status` outputs
+- [x] run tests - must pass before task 3
 
 ### Task 3: `nextFire` helper
 

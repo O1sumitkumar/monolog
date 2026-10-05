@@ -464,3 +464,85 @@ func TestTelegramStatusCommand_LoadsConfigFromDisk(t *testing.T) {
 		}
 	}
 }
+
+// --- daily digest config ---
+
+func TestToTelegramPackageConfig_Digest(t *testing.T) {
+	riga, err := time.LoadLocation("Europe/Riga")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name     string
+		time, tz string
+		enabled  bool
+		h, m     int
+		loc      *time.Location
+		warn     string
+	}{
+		{"valid", "08:30", "Europe/Riga", true, 8, 30, riga, ""},
+		{"empty is off", "", "", false, 0, 0, nil, ""},
+		{"bad time", "8am", "", false, 0, 0, nil, "not HH:MM"},
+		{"out of range", "25:00", "", false, 0, 0, nil, "not HH:MM"},
+		{"unknown tz", "08:00", "Mars/Base", false, 0, 0, nil, "unknown time zone"},
+		{"empty tz uses local", "07:05", "", true, 7, 5, time.Local, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var w bytes.Buffer
+			got := toTelegramPackageConfig(config.TelegramConfig{DigestTime: tt.time, DigestTZ: tt.tz}, &w)
+			if got.DigestEnabled != tt.enabled || got.DigestHour != tt.h || got.DigestMinute != tt.m {
+				t.Errorf("got %+v", got)
+			}
+			if tt.loc != nil && (got.DigestLocation == nil || got.DigestLocation.String() != tt.loc.String()) {
+				t.Errorf("location = %v, want %v", got.DigestLocation, tt.loc)
+			}
+			if tt.warn == "" && w.Len() != 0 {
+				t.Errorf("unexpected warning %q", w.String())
+			}
+			if tt.warn != "" && !strings.Contains(w.String(), tt.warn) {
+				t.Errorf("warning %q lacks %q", w.String(), tt.warn)
+			}
+		})
+	}
+}
+
+func runTelegramStatus(t *testing.T, tc config.TelegramConfig) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "monolog")
+	initTestRepo(t, dir)
+	tc.Enabled = true
+	if err := config.SaveTelegram(dir, tc); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.Load(dir); err != nil {
+		t.Fatal(err)
+	}
+	rootCmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetErr(buf)
+	rootCmd.SetArgs([]string{"telegram", "status"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.String()
+}
+
+func TestTelegramStatusCommand_DailyDigest(t *testing.T) {
+	base := config.TelegramConfig{AllowedUserIDs: []int64{1}, PullInterval: time.Second, BrowseLimit: 1}
+
+	if out := runTelegramStatus(t, base); !strings.Contains(out, "daily_digest: off") {
+		t.Errorf("want off, got:\n%s", out)
+	}
+	on := base
+	on.DigestTime, on.DigestTZ = "08:00", "Europe/Riga"
+	if out := runTelegramStatus(t, on); !strings.Contains(out, "daily_digest: 08:00 Europe/Riga") {
+		t.Errorf("want on, got:\n%s", out)
+	}
+	bad := base
+	bad.DigestTime = "nope"
+	if out := runTelegramStatus(t, bad); !strings.Contains(out, "daily_digest: invalid (") {
+		t.Errorf("want invalid, got:\n%s", out)
+	}
+}
