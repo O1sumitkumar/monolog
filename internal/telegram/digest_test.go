@@ -4,12 +4,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/maksmas/monolog/internal/model"
-	"github.com/maksmas/monolog/internal/schedule"
 	"github.com/maksmas/monolog/internal/store"
 )
 
@@ -56,6 +57,34 @@ func TestNextFire(t *testing.T) {
 	}
 }
 
+func TestNextFireDSTGapAndOverlap(t *testing.T) {
+	ny, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Skipf("tzdata unavailable: %v", err)
+	}
+	tests := []struct {
+		name         string
+		now          time.Time
+		hour, minute int
+	}{
+		{"nonexistent 02:30 on spring-forward day", time.Date(2026, 3, 8, 0, 30, 0, 0, ny), 2, 30},
+		{"nonexistent 02:30 day before", time.Date(2026, 3, 7, 12, 0, 0, 0, ny), 2, 30},
+		{"ambiguous 01:30 on fall-back day", time.Date(2026, 11, 1, 0, 30, 0, 0, ny), 1, 30},
+		{"ambiguous 01:30 after first occurrence", time.Date(2026, 11, 1, 1, 45, 0, 0, ny), 1, 30},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := nextFire(tc.now, tc.hour, tc.minute, ny)
+			if !got.After(tc.now) {
+				t.Errorf("nextFire = %v, not after now %v", got, tc.now)
+			}
+			if got.Sub(tc.now) > 48*time.Hour {
+				t.Errorf("nextFire = %v, more than 48h after now %v", got, tc.now)
+			}
+		})
+	}
+}
+
 func TestNextFireNilLocationUsesLocal(t *testing.T) {
 	now := time.Date(2026, 10, 5, 7, 0, 0, 0, time.Local)
 	got := nextFire(now, 8, 0, nil)
@@ -85,6 +114,10 @@ func TestNewlyToday(t *testing.T) {
 		{"done", digestTask("a", "done", today, yesterday, 1), false},
 		{"unparsable created", digestTask("a", "open", today, "garbage", 1), false},
 		{"empty created", digestTask("a", "open", today, "", 1), false},
+		{"created exactly at UTC midnight today", digestTask("a", "open", today, "2026-10-05T00:00:00Z", 1), false},
+		{"created one second before UTC midnight", digestTask("a", "open", today, "2026-10-04T23:59:59Z", 1), true},
+		{"empty schedule", digestTask("a", "open", "", yesterday, 1), false},
+		{"unknown status", digestTask("a", "archived", today, yesterday, 1), false},
 		{"non-UTC offset created today UTC", digestTask("a", "open", today, "2026-10-05T01:00:00+03:00", 1), true},
 	}
 	for _, tc := range tests {
@@ -111,31 +144,24 @@ func TestNewlyTodayOrdersByPosition(t *testing.T) {
 }
 
 func TestNewlyTodayParityWithTodayBucket(t *testing.T) {
-	for _, now := range []time.Time{
-		time.Date(2026, 10, 5, 23, 59, 59, 0, time.UTC),
-		time.Date(2026, 10, 6, 0, 0, 0, 0, time.UTC),
-		time.Date(2026, 10, 6, 1, 0, 0, 0, time.FixedZone("x", 3*3600)),
-	} {
-		todayISO, _ := schedule.Parse(schedule.Today, now, "")
+	// Today is the UTC date, so the exact ISO date is spelled out per now.
+	tests := []struct {
+		now      time.Time
+		todayISO string
+	}{
+		{time.Date(2026, 10, 5, 23, 59, 59, 0, time.UTC), "2026-10-05"},
+		{time.Date(2026, 10, 6, 0, 0, 0, 0, time.UTC), "2026-10-06"},
+		{time.Date(2026, 10, 6, 1, 0, 0, 0, time.FixedZone("x", 3*3600)), "2026-10-05"},
+	}
+	for _, tc := range tests {
 		tasks := []model.Task{
-			digestTask("exact", "open", todayISO, "2026-10-01T00:00:00Z", 1),
+			digestTask("exact", "open", tc.todayISO, "2026-10-01T00:00:00Z", 1),
 			digestTask("overdue", "open", "2026-10-01", "2026-10-01T00:00:00Z", 2),
 			digestTask("future", "open", "2026-12-01", "2026-10-01T00:00:00Z", 3),
-			digestTask("new", "open", todayISO, now.UTC().Format(time.RFC3339), 4),
+			digestTask("new", "open", tc.todayISO, tc.now.UTC().Format(time.RFC3339), 4),
 		}
-		inBucket := map[string]bool{}
-		for _, tk := range tasks {
-			if schedule.MatchesBucket(tk.Schedule, schedule.Today, now) && tk.Schedule == todayISO {
-				inBucket[tk.ID] = true
-			}
-		}
-		for _, tk := range newlyToday(tasks, now) {
-			if !inBucket[tk.ID] {
-				t.Errorf("now=%v: %s in digest but not in /today exact-date set", now, tk.ID)
-			}
-		}
-		if got := newlyToday(tasks, now); len(got) != 1 || got[0].ID != "exact" {
-			t.Errorf("now=%v: got %+v, want only exact", now, got)
+		if got := newlyToday(tasks, tc.now); len(got) != 1 || got[0].ID != "exact" {
+			t.Errorf("now=%v: got %+v, want only exact", tc.now, got)
 		}
 	}
 }
@@ -230,6 +256,72 @@ func TestSendDigestOneUserFailureDoesNotBlockOthers(t *testing.T) {
 	}
 }
 
+// nthFailBot fails the Nth (1-based) SendMessage to failChat only.
+type nthFailBot struct {
+	*fakeBot
+	failChat int64
+	n, seen  int
+}
+
+func (b *nthFailBot) SendMessage(ctx context.Context, chatID int64, html string, kb InlineKeyboard) (int, error) {
+	if chatID == b.failChat {
+		b.seen++
+		if b.seen == b.n {
+			return 0, errors.New("flood wait")
+		}
+	}
+	return b.fakeBot.SendMessage(ctx, chatID, html, kb)
+}
+
+func TestSendDigestRowFailureDoesNotBlockOthers(t *testing.T) {
+	h, _, s, _ := newTestHandler(t, []int64{1, 2})
+	fb := &fakeBot{}
+	// user 1: header ok, first row ok, second row fails.
+	h.bot = &nthFailBot{fakeBot: fb, failChat: 1, n: 3}
+	var log bytes.Buffer
+	h.SetWriter(&log)
+	seedDigestTask(t, s, "01JDIGEST0000000000000000A", digestYesterday, 1000)
+	seedDigestTask(t, s, "01JDIGEST0000000000000000B", digestYesterday, 2000)
+	seedDigestTask(t, s, "01JDIGEST0000000000000000C", digestYesterday, 3000)
+	h.sendDigest(context.Background())
+	var u1, u2 int
+	for _, m := range fb.sent {
+		switch m.ChatID {
+		case 1:
+			u1++
+		case 2:
+			u2++
+		}
+	}
+	if u1 != 2 {
+		t.Errorf("user 1 got %d messages, want 2 (header + 1 row, then break)", u1)
+	}
+	if u2 != 4 {
+		t.Errorf("user 2 got %d messages, want 4", u2)
+	}
+	if !strings.Contains(log.String(), "send row to 1") {
+		t.Errorf("failure not logged: %q", log.String())
+	}
+}
+
+func TestSendDigestListErrorSendsNothing(t *testing.T) {
+	h, bot, s, repo := newTestHandler(t, []int64{1})
+	var log bytes.Buffer
+	h.SetWriter(&log)
+	seedDigestTask(t, s, "01JDIGEST0000000000000000A", digestYesterday, 1000)
+	corrupt := filepath.Join(repo, ".monolog", "tasks", "01JCORRUPT00000000000000Z.json")
+	if err := os.WriteFile(corrupt, []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	h.sendDigest(context.Background())
+	if len(bot.sent) != 0 {
+		t.Fatalf("sent=%d want 0", len(bot.sent))
+	}
+	if !strings.Contains(log.String(), "digest: list:") {
+		t.Errorf("list error not logged: %q", log.String())
+	}
+}
+
 func TestSendDigestIgnoresReadOnly(t *testing.T) {
 	h, bot, s, _ := newTestHandler(t, []int64{1})
 	h.SetReadOnly(true)
@@ -300,7 +392,8 @@ func TestRunDigestTickerFiresAndReschedules(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan struct{})
-	go runDigestTicker(ctx, h, digestTickerCfg(), &bytes.Buffer{}, done)
+	h.cfg = digestTickerCfg()
+	go runDigestTicker(ctx, h, done)
 
 	// now is 10:00 UTC, target 12:00 same day.
 	if d := f.nextReq(t); d != 2*time.Hour {
@@ -331,7 +424,8 @@ func TestRunDigestTickerNoDoubleFireWhenClockLags(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan struct{})
-	go runDigestTicker(ctx, h, digestTickerCfg(), &bytes.Buffer{}, done)
+	h.cfg = digestTickerCfg()
+	go runDigestTicker(ctx, h, done)
 	if d := f.nextReq(t); d != time.Millisecond {
 		t.Fatalf("first wait=%v want 1ms", d)
 	}
@@ -348,13 +442,37 @@ func TestRunDigestTickerStopsPromptlyOnCancel(t *testing.T) {
 	f := newFakeDigestAfter(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
-	go runDigestTicker(ctx, h, digestTickerCfg(), &bytes.Buffer{}, done)
+	h.cfg = digestTickerCfg()
+	go runDigestTicker(ctx, h, done)
 	f.nextReq(t)
 	cancel()
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("ticker did not stop on cancel")
+	}
+	if len(bot.sent) != 0 {
+		t.Fatalf("sent=%d want 0", len(bot.sent))
+	}
+}
+
+func TestRunDigestTickerCancelDuringFireSendsNothing(t *testing.T) {
+	h, bot, s, _ := newTestHandler(t, []int64{1})
+	seedDigestTask(t, s, "01JDIGEST0000000000000000A", digestYesterday, 1000)
+	f := newFakeDigestAfter(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	h.cfg = digestTickerCfg()
+	go runDigestTicker(ctx, h, done)
+	f.nextReq(t)
+	// Cancel and release the timer together; select may pick either case,
+	// but the post-wait guard must stop the fire in both.
+	cancel()
+	f.fire <- time.Now()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("ticker did not stop")
 	}
 	if len(bot.sent) != 0 {
 		t.Fatalf("sent=%d want 0", len(bot.sent))

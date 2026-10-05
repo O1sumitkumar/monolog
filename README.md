@@ -55,7 +55,7 @@ monolog                             # launch the interactive TUI
 - **Recurring tasks** — completing a task with a recurrence rule auto-spawns the next occurrence (`monthly:N`, `weekly:<day>`, `workdays`, `days:N`).
 - **Color themes** — two built-in themes plus drop-in user themes from `<MONOLOG_DIR>/.monolog/themes/*.json`.
 - **Gmail import** — opt-in import of labeled emails as tasks, with archive-on-done.
-- **Telegram bot** — opt-in long-polling bot to capture, browse, and complete tasks from your phone.
+- **Telegram bot** — opt-in long-polling bot to capture, browse, and complete tasks from your phone; optional daily digest of tasks that rolled into Today.
 - **Clickable URLs** — the TUI wraps URLs in OSC 8 hyperlinks so Cmd/Ctrl-click opens the browser.
 - **Notes** — append timestamped notes to any task from the CLI or the TUI detail panel.
 - **Quick capture** — a Raycast script command + bookmarklet for browser capture, and a Claude Code skill that lets Claude file follow-up work into a quarantined queue.

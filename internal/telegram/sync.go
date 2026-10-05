@@ -349,7 +349,7 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 
 	if opts.Cfg.DigestEnabled {
 		digestDone := make(chan struct{})
-		go runDigestTicker(ctx, handler, opts.Cfg, writer, digestDone)
+		go runDigestTicker(ctx, handler, digestDone)
 		defer func() {
 			<-digestDone
 		}()

@@ -139,7 +139,7 @@ func newTelegramStatusCmd() *cobra.Command {
 			fmt.Fprintf(out, "pull_interval: %s\n", tc.PullInterval)
 			fmt.Fprintf(out, "browse_limit: %d\n", tc.BrowseLimit)
 
-			if _, _, _, _, err := parseDigest(tc); err != nil {
+			if _, _, _, err := parseDigest(tc); err != nil {
 				fmt.Fprintf(out, "daily_digest: invalid (%v)\n", err)
 			} else if tc.DigestTime == "" {
 				fmt.Fprintln(out, "daily_digest: off")
@@ -175,13 +175,13 @@ func toTelegramPackageConfig(tc config.TelegramConfig, warn io.Writer) telegram.
 		PullInterval:   tc.PullInterval,
 		BrowseLimit:    tc.BrowseLimit,
 	}
-	enabled, hour, minute, loc, err := parseDigest(tc)
+	hour, minute, loc, err := parseDigest(tc)
 	if err != nil {
 		// Never block bot startup over the digest: warn and leave it off.
 		fmt.Fprintf(warn, "monolog: daily digest disabled: %v\n", err)
 		return cfg
 	}
-	cfg.DigestEnabled = enabled
+	cfg.DigestEnabled = tc.DigestTime != ""
 	cfg.DigestHour = hour
 	cfg.DigestMinute = minute
 	cfg.DigestLocation = loc
@@ -190,20 +190,20 @@ func toTelegramPackageConfig(tc config.TelegramConfig, warn io.Writer) telegram.
 
 // parseDigest validates the raw digest strings. An empty DigestTime means the
 // digest is off; an empty DigestTZ resolves to time.Local.
-func parseDigest(tc config.TelegramConfig) (enabled bool, hour, minute int, loc *time.Location, err error) {
+func parseDigest(tc config.TelegramConfig) (hour, minute int, loc *time.Location, err error) {
 	if tc.DigestTime == "" {
-		return false, 0, 0, nil, nil
+		return 0, 0, nil, nil
 	}
 	t, err := time.Parse("15:04", tc.DigestTime)
 	if err != nil || len(tc.DigestTime) != 5 {
-		return false, 0, 0, nil, fmt.Errorf("daily_digest_time %q is not HH:MM", tc.DigestTime)
+		return 0, 0, nil, fmt.Errorf("daily_digest_time %q is not HH:MM", tc.DigestTime)
 	}
 	loc = time.Local
 	if tc.DigestTZ != "" {
 		loc, err = time.LoadLocation(tc.DigestTZ)
 		if err != nil {
-			return false, 0, 0, nil, fmt.Errorf("daily_digest_tz %q: unknown time zone", tc.DigestTZ)
+			return 0, 0, nil, fmt.Errorf("daily_digest_tz %q: unknown time zone", tc.DigestTZ)
 		}
 	}
-	return true, t.Hour(), t.Minute(), loc, nil
+	return t.Hour(), t.Minute(), loc, nil
 }

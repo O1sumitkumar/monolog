@@ -3,7 +3,6 @@ package telegram
 import (
 	"context"
 	"fmt"
-	"io"
 	"sort"
 	"time"
 
@@ -101,15 +100,12 @@ var digestAfter = func(d time.Duration) <-chan time.Time { return time.After(d) 
 // waits for tomorrow. After each fire the next target is computed from
 // max(now, firedTarget) so a wall clock that lags the timer cannot schedule
 // the same target twice. done is closed on exit.
-func runDigestTicker(ctx context.Context, h *Handler, cfg TelegramConfig, writer io.Writer, done chan<- struct{}) {
+func runDigestTicker(ctx context.Context, h *Handler, done chan<- struct{}) {
 	defer close(done)
 	base := h.now()
 	for {
-		target := nextFire(base, cfg.DigestHour, cfg.DigestMinute, cfg.DigestLocation)
+		target := nextFire(base, h.cfg.DigestHour, h.cfg.DigestMinute, h.cfg.DigestLocation)
 		d := target.Sub(h.now())
-		if d < 0 {
-			d = 0
-		}
 		select {
 		case <-ctx.Done():
 			return
@@ -118,7 +114,7 @@ func runDigestTicker(ctx context.Context, h *Handler, cfg TelegramConfig, writer
 		if ctx.Err() != nil {
 			return
 		}
-		fmt.Fprintf(writer, "telegram: digest: firing for %s\n", target.Format(time.RFC3339))
+		fmt.Fprintf(h.writer, "telegram: digest: firing for %s\n", target.Format(time.RFC3339))
 		h.sendDigest(ctx)
 		base = h.now()
 		if target.After(base) {

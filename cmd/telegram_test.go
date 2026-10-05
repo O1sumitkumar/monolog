@@ -484,6 +484,10 @@ func TestToTelegramPackageConfig_Digest(t *testing.T) {
 		{"empty is off", "", "", false, 0, 0, nil, ""},
 		{"bad time", "8am", "", false, 0, 0, nil, "not HH:MM"},
 		{"out of range", "25:00", "", false, 0, 0, nil, "not HH:MM"},
+		{"single-digit hour", "8:00", "", false, 0, 0, nil, "not HH:MM"},
+		{"minute 60", "08:60", "", false, 0, 0, nil, "not HH:MM"},
+		{"with seconds", "08:00:00", "", false, 0, 0, nil, "not HH:MM"},
+		{"whitespace", " 08:00", "", false, 0, 0, nil, "not HH:MM"},
 		{"unknown tz", "08:00", "Mars/Base", false, 0, 0, nil, "unknown time zone"},
 		{"empty tz uses local", "07:05", "", true, 7, 5, time.Local, ""},
 	}
@@ -539,6 +543,21 @@ func TestTelegramStatusCommand_DailyDigest(t *testing.T) {
 	on.DigestTime, on.DigestTZ = "08:00", "Europe/Riga"
 	if out := runTelegramStatus(t, on); !strings.Contains(out, "daily_digest: 08:00 Europe/Riga") {
 		t.Errorf("want on, got:\n%s", out)
+	}
+	local := base
+	local.DigestTime = "08:00"
+	if out := runTelegramStatus(t, local); !strings.Contains(out, "daily_digest: 08:00 local") {
+		t.Errorf("want local label, got:\n%s", out)
+	}
+	badTZ := base
+	badTZ.DigestTime, badTZ.DigestTZ = "08:00", "Mars/Base"
+	if out := runTelegramStatus(t, badTZ); !strings.Contains(out, "daily_digest: invalid (") {
+		t.Errorf("want invalid tz, got:\n%s", out)
+	}
+	offBadTZ := base
+	offBadTZ.DigestTZ = "Mars/Base"
+	if out := runTelegramStatus(t, offBadTZ); !strings.Contains(out, "daily_digest: off") {
+		t.Errorf("want off with empty time, got:\n%s", out)
 	}
 	bad := base
 	bad.DigestTime = "nope"
