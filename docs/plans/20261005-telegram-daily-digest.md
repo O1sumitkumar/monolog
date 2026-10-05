@@ -95,9 +95,9 @@
 - Create: `internal/telegram/digest.go`
 - Create: `internal/telegram/digest_test.go`
 
-- [ ] implement `nextFire(now, hour, minute, loc)` using `time.Date` in `loc` (DST-safe), returning the next occurrence strictly after `now`; a nil `loc` means `time.Local`
-- [ ] write tests: before the time, after the time, exactly at the time (expects tomorrow), non-UTC zone, a DST-change day, nil location
-- [ ] run tests - must pass before task 4
+- [x] implement `nextFire(now, hour, minute, loc)` using `time.Date` in `loc` (DST-safe), returning the next occurrence strictly after `now`; a nil `loc` means `time.Local`
+- [x] write tests: before the time, after the time, exactly at the time (expects tomorrow), non-UTC zone, a DST-change day, nil location
+- [x] run tests - must pass before task 4
 
 ### Task 4: `newlyToday` selection
 
