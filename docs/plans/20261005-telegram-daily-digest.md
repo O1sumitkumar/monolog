@@ -138,10 +138,10 @@
 - [x] run tests - must pass before task 7
 
 ### Task 7: Verify acceptance criteria
-- [ ] the digest is sent at the configured time, only for newly rolled-in tasks (same Today definition as `/today`), to every allowed user
-- [ ] disabled by default; invalid config never blocks the bot
-- [ ] run full test suite: `go test ./...` and `go vet ./...`
-- [ ] `go build -o monolog` succeeds
+- [x] the digest is sent at the configured time, only for newly rolled-in tasks (same Today definition as `/today`), to every allowed user
+- [x] disabled by default; invalid config never blocks the bot
+- [x] run full test suite: `go test ./...` and `go vet ./...`
+- [x] `go build -o monolog` succeeds
 
 ### Task 8: [Final] Update documentation
 - [ ] update the Telegram section of `CLAUDE.md` (config keys, selection rule, no catch-up, goroutine, the `TelegramConfig` field plumbing)
