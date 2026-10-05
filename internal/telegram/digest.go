@@ -92,10 +92,12 @@ func (h *Handler) sendDigest(ctx context.Context) {
 	}
 }
 
-// digestAfter is the timer seam for runDigestTicker; tests replace it.
+// digestAfter is the timer seam for runDigestTicker. It is package-level, like
+// pullFunc/syncFunc, because the ticker only receives the Handler; tests swap
+// it and restore it via t.Cleanup.
 var digestAfter = func(d time.Duration) <-chan time.Time { return time.After(d) }
 
-// runDigestTicker fires sendDigest once a day at the configured local time
+// runDigestTicker fires sendDigest once a day at the configured time of day in DigestLocation
 // until ctx is cancelled. It is stateless: a restart after today's fire time
 // waits for tomorrow. After each fire the next target is computed from
 // max(now, firedTarget) so a wall clock that lags the timer cannot schedule

@@ -84,7 +84,8 @@ type TelegramConfig struct {
 	BrowseLimit    int
 
 	// Daily digest, already validated by the cmd layer. A nil
-	// DigestLocation means time.Local.
+	// DigestLocation means time.Local. DigestHour, DigestMinute and
+	// DigestLocation are meaningful only when DigestEnabled is true.
 	DigestEnabled  bool
 	DigestHour     int
 	DigestMinute   int

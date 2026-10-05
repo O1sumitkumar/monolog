@@ -188,14 +188,18 @@ func toTelegramPackageConfig(tc config.TelegramConfig, warn io.Writer) telegram.
 	return cfg
 }
 
+// digestTimeLayout is the required zero-padded HH:MM form of daily_digest_time.
+const digestTimeLayout = "15:04"
+
 // parseDigest validates the raw digest strings. An empty DigestTime means the
 // digest is off; an empty DigestTZ resolves to time.Local.
 func parseDigest(tc config.TelegramConfig) (hour, minute int, loc *time.Location, err error) {
 	if tc.DigestTime == "" {
 		return 0, 0, nil, nil
 	}
-	t, err := time.Parse("15:04", tc.DigestTime)
-	if err != nil || len(tc.DigestTime) != 5 {
+	t, err := time.Parse(digestTimeLayout, tc.DigestTime)
+	// The length check rejects "8:00", which the layout parse accepts.
+	if err != nil || len(tc.DigestTime) != len(digestTimeLayout) {
 		return 0, 0, nil, fmt.Errorf("daily_digest_time %q is not HH:MM", tc.DigestTime)
 	}
 	loc = time.Local
