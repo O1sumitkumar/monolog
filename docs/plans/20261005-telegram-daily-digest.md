@@ -105,13 +105,13 @@
 - Modify: `internal/telegram/digest.go`
 - Modify: `internal/telegram/digest_test.go`
 
-- [ ] implement `newlyToday(tasks, now)`: open, `Schedule` equals today's ISO date (via `schedule.Parse(schedule.Today, now, "")`), UTC date of `CreatedAt` before today, sorted by `Position`
-- [ ] a task whose `CreatedAt` fails to parse is skipped
-- [ ] write tests for the included case (created yesterday, scheduled today)
-- [ ] write tests for the excluded cases: created today, overdue, future, done, unparsable `CreatedAt`
-- [ ] write tests for `Position` ordering
-- [ ] write a parity test near UTC midnight: the digest set equals the exact-date subset of what `schedule.MatchesBucket(..., schedule.Today, now)` returns, so it can never disagree with `/today`
-- [ ] run tests - must pass before task 5
+- [x] implement `newlyToday(tasks, now)`: open, `Schedule` equals today's ISO date (via `schedule.Parse(schedule.Today, now, "")`), UTC date of `CreatedAt` before today, sorted by `Position`
+- [x] a task whose `CreatedAt` fails to parse is skipped
+- [x] write tests for the included case (created yesterday, scheduled today)
+- [x] write tests for the excluded cases: created today, overdue, future, done, unparsable `CreatedAt`
+- [x] write tests for `Position` ordering
+- [x] write a parity test near UTC midnight: the digest set equals the exact-date subset of what `schedule.MatchesBucket(..., schedule.Today, now)` returns, so it can never disagree with `/today`
+- [x] run tests - must pass before task 5
 
 ### Task 5: `sendDigest`
 
