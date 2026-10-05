@@ -1211,3 +1211,49 @@ func TestCommandPullUsesTheShorterFetchBudget(t *testing.T) {
 			commandFetchTimeout, git.DefaultFetchTimeout)
 	}
 }
+
+func TestServeDigestStartedOnlyWhenEnabled(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		repoPath, s := initTelegramTestRepo(t)
+		withPullFunc(t, func(string) error { return nil })
+		withSyncFunc(t, noopSync)
+		f := newFakeDigestAfter(t)
+		bot := newBlockingBot()
+		cfg := TelegramConfig{
+			AllowedUserIDs: []int64{100},
+			PullInterval:   time.Hour,
+			BrowseLimit:    20,
+			DigestEnabled:  enabled,
+			DigestHour:     12,
+			DigestLocation: time.UTC,
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() {
+			done <- Serve(ctx, ServeOptions{
+				RepoPath: repoPath, Bot: bot, Store: s, Cfg: cfg,
+				DateFormat: "02-01-2006",
+				Now:        func() time.Time { return handlerTestNow },
+				Writer:     &bytes.Buffer{},
+			})
+		}()
+		if enabled {
+			f.nextReq(t)
+		} else {
+			select {
+			case <-f.reqs:
+				t.Fatal("digest started while disabled")
+			case <-time.After(100 * time.Millisecond):
+			}
+		}
+		cancel()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatalf("Serve err: %v", err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("Serve did not shut down (enabled=%v)", enabled)
+		}
+	}
+}

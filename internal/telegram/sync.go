@@ -347,6 +347,14 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 		<-tickerDone
 	}()
 
+	if opts.Cfg.DigestEnabled {
+		digestDone := make(chan struct{})
+		go runDigestTicker(ctx, handler, opts.Cfg, writer, digestDone)
+		defer func() {
+			<-digestDone
+		}()
+	}
+
 	return runUpdateLoop(ctx, opts.Bot, handler, writer)
 }
 

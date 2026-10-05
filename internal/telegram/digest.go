@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"fmt"
+	"io"
 	"sort"
 	"time"
 
@@ -88,6 +89,40 @@ func (h *Handler) sendDigest(ctx context.Context) {
 				fmt.Fprintf(h.writer, "telegram: digest: send row to %d: %v\n", uid, err)
 				break
 			}
+		}
+	}
+}
+
+// digestAfter is the timer seam for runDigestTicker; tests replace it.
+var digestAfter = func(d time.Duration) <-chan time.Time { return time.After(d) }
+
+// runDigestTicker fires sendDigest once a day at the configured local time
+// until ctx is cancelled. It is stateless: a restart after today's fire time
+// waits for tomorrow. After each fire the next target is computed from
+// max(now, firedTarget) so a wall clock that lags the timer cannot schedule
+// the same target twice. done is closed on exit.
+func runDigestTicker(ctx context.Context, h *Handler, cfg TelegramConfig, writer io.Writer, done chan<- struct{}) {
+	defer close(done)
+	base := h.now()
+	for {
+		target := nextFire(base, cfg.DigestHour, cfg.DigestMinute, cfg.DigestLocation)
+		d := target.Sub(h.now())
+		if d < 0 {
+			d = 0
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-digestAfter(d):
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		fmt.Fprintf(writer, "telegram: digest: firing for %s\n", target.Format(time.RFC3339))
+		h.sendDigest(ctx)
+		base = h.now()
+		if target.After(base) {
+			base = target
 		}
 	}
 }

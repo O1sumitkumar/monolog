@@ -132,10 +132,10 @@
 - Modify: `internal/telegram/digest_test.go`
 - Modify: `internal/telegram/sync_test.go`
 
-- [ ] implement `runDigestTicker`: compute `nextFire`, wait on `digestAfter(d)` or `ctx.Done()`, call `sendDigest`, then compute the next fire from `max(h.now(), firedTarget)` so a wall clock that lags the monotonic timer (NTP slew) cannot fire the same target twice; close `done` on exit
-- [ ] in `Serve`, start it only when `Cfg.DigestEnabled` and wait on its done channel in the shutdown path, as for the pull ticker
-- [ ] write tests with a fake `digestAfter`: fires once and reschedules (asserting the next requested duration), stops promptly on cancel, not started when disabled, no double fire when `now` is 1ms before the target right after firing, `Serve` shuts down cleanly with the digest enabled
-- [ ] run tests - must pass before task 7
+- [x] implement `runDigestTicker`: compute `nextFire`, wait on `digestAfter(d)` or `ctx.Done()`, call `sendDigest`, then compute the next fire from `max(h.now(), firedTarget)` so a wall clock that lags the monotonic timer (NTP slew) cannot fire the same target twice; close `done` on exit
+- [x] in `Serve`, start it only when `Cfg.DigestEnabled` and wait on its done channel in the shutdown path, as for the pull ticker
+- [x] write tests with a fake `digestAfter`: fires once and reschedules (asserting the next requested duration), stops promptly on cancel, not started when disabled, no double fire when `now` is 1ms before the target right after firing, `Serve` shuts down cleanly with the digest enabled
+- [x] run tests - must pass before task 7
 
 ### Task 7: Verify acceptance criteria
 - [ ] the digest is sent at the configured time, only for newly rolled-in tasks (same Today definition as `/today`), to every allowed user

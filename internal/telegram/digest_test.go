@@ -260,3 +260,103 @@ func TestSendDigestFailedPullIsNonFatal(t *testing.T) {
 		t.Errorf("pull failure not logged: %q", log.String())
 	}
 }
+
+// fakeDigestAfter records requested durations and releases each wait on demand.
+type fakeDigestAfter struct {
+	reqs chan time.Duration
+	fire chan time.Time
+}
+
+func newFakeDigestAfter(t *testing.T) *fakeDigestAfter {
+	f := &fakeDigestAfter{reqs: make(chan time.Duration, 16), fire: make(chan time.Time, 16)}
+	old := digestAfter
+	digestAfter = func(d time.Duration) <-chan time.Time {
+		f.reqs <- d
+		return f.fire
+	}
+	t.Cleanup(func() { digestAfter = old })
+	return f
+}
+
+func (f *fakeDigestAfter) nextReq(t *testing.T) time.Duration {
+	t.Helper()
+	select {
+	case d := <-f.reqs:
+		return d
+	case <-time.After(2 * time.Second):
+		t.Fatal("no digestAfter request")
+		return 0
+	}
+}
+
+func digestTickerCfg() TelegramConfig {
+	return TelegramConfig{AllowedUserIDs: []int64{1}, DigestEnabled: true, DigestHour: 12, DigestMinute: 0, DigestLocation: time.UTC}
+}
+
+func TestRunDigestTickerFiresAndReschedules(t *testing.T) {
+	h, bot, s, _ := newTestHandler(t, []int64{1})
+	seedDigestTask(t, s, "01JDIGEST0000000000000000A", digestYesterday, 1000)
+	f := newFakeDigestAfter(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go runDigestTicker(ctx, h, digestTickerCfg(), &bytes.Buffer{}, done)
+
+	// now is 10:00 UTC, target 12:00 same day.
+	if d := f.nextReq(t); d != 2*time.Hour {
+		t.Fatalf("first wait=%v want 2h", d)
+	}
+	f.fire <- time.Now()
+	// The clock is frozen at 10:00, so the next target is base=max(now,target)=12:00 -> next day 12:00.
+	if d := f.nextReq(t); d != 26*time.Hour {
+		t.Fatalf("second wait=%v want 26h", d)
+	}
+	if len(bot.sent) != 2 {
+		t.Fatalf("sent=%d want 2", len(bot.sent))
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("ticker did not stop on cancel")
+	}
+}
+
+func TestRunDigestTickerNoDoubleFireWhenClockLags(t *testing.T) {
+	// now is 1ms before the target when the timer fires; the next wait must
+	// still be for tomorrow, not the same target again.
+	target := time.Date(2026, 5, 18, 12, 0, 0, 0, time.UTC)
+	h, _, _, _ := newTestHandlerWithClock(t, []int64{1}, func() time.Time { return target.Add(-time.Millisecond) })
+	f := newFakeDigestAfter(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go runDigestTicker(ctx, h, digestTickerCfg(), &bytes.Buffer{}, done)
+	if d := f.nextReq(t); d != time.Millisecond {
+		t.Fatalf("first wait=%v want 1ms", d)
+	}
+	f.fire <- time.Now()
+	if d := f.nextReq(t); d < 23*time.Hour {
+		t.Fatalf("second wait=%v want ~24h (no double fire)", d)
+	}
+	cancel()
+	<-done
+}
+
+func TestRunDigestTickerStopsPromptlyOnCancel(t *testing.T) {
+	h, bot, _, _ := newTestHandler(t, []int64{1})
+	f := newFakeDigestAfter(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go runDigestTicker(ctx, h, digestTickerCfg(), &bytes.Buffer{}, done)
+	f.nextReq(t)
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("ticker did not stop on cancel")
+	}
+	if len(bot.sent) != 0 {
+		t.Fatalf("sent=%d want 0", len(bot.sent))
+	}
+}
