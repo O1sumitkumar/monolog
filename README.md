@@ -187,7 +187,7 @@ Telegram bot integration subcommands — see [Telegram integration](#telegram-in
 | Subcommand | Description |
 |------------|-------------|
 | `monolog telegram serve` | Run the long-poll loop that lets allow-listed Telegram users capture, browse, and complete tasks from their phone. Intended to run as a systemd service on an always-on host. |
-| `monolog telegram status` | Print the configured `enabled` flag, allow-list, pull interval, browse cap, and whether `MONOLOG_TELEGRAM_TOKEN` is set in the env. The token VALUE is never printed. |
+| `monolog telegram status` | Print the configured `enabled` flag, allow-list, pull interval, browse cap, daily digest setting (`HH:MM <tz>`, `off`, or `invalid (<reason>)`), and whether `MONOLOG_TELEGRAM_TOKEN` is set in the env. The token VALUE is never printed. |
 
 ### `monolog --version`
 
@@ -430,12 +430,16 @@ Monolog ships a long-polling Telegram bot that lets you capture, browse, and com
        "enabled": true,
        "allowed_user_ids": [12345678],
        "pull_interval_seconds": 30,
-       "browse_limit": 20
+       "browse_limit": 20,
+       "daily_digest_time": "08:00",
+       "daily_digest_tz": "Europe/Riga"
      }
    }
    ```
 
-   Defaults if omitted: `enabled=false`, `allowed_user_ids=[]` (rejects everyone — explicit allow-list is the only auth), `pull_interval_seconds=30`, `browse_limit=20`.
+   Defaults if omitted: `enabled=false`, `allowed_user_ids=[]` (rejects everyone — explicit allow-list is the only auth), `pull_interval_seconds=30`, `browse_limit=20`, daily digest off.
+
+   `daily_digest_time` (`HH:MM`) turns on a once-a-day message listing only the tasks that rolled into Today since yesterday (open, scheduled for today's date, created on an earlier UTC date), sent to every allow-listed user. `daily_digest_tz` is an IANA zone name and only decides when it fires; an empty value means the host's local zone, which is often UTC on a systemd host. "Today" is the same UTC-date Today as `/today`. The digest fires only at the configured time: a bot restarted after that time waits for tomorrow, with no catch-up. An invalid time or zone disables the digest with a warning and never blocks the bot.
 
    `pull_interval_seconds` is only the idle safety net. Any command that reads or acts on existing state (`/today`, `/week`, `/active`, `/all`, and the inline buttons) pulls first, rate-limited to one fetch per 5s on a clock shared with the ticker — so a laptop-side `monolog add` shows up on the phone within seconds regardless of the interval, and lowering it buys little.
 

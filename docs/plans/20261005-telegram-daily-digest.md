@@ -144,9 +144,9 @@
 - [x] `go build -o monolog` succeeds
 
 ### Task 8: [Final] Update documentation
-- [ ] update the Telegram section of `CLAUDE.md` (config keys, selection rule, no catch-up, goroutine, the `TelegramConfig` field plumbing)
-- [ ] update the `telegram` block and the `monolog telegram status` row in `README.md`, and the `telegram` block in `docs/deploy/README.md`, with `daily_digest_time` and `daily_digest_tz` (not `env.example`, which holds only env vars); note that an empty tz means the host's local zone, which is often UTC on a systemd host
-- [ ] move this plan to `docs/plans/completed/`
+- [x] update the Telegram section of `CLAUDE.md` (config keys, selection rule, no catch-up, goroutine, the `TelegramConfig` field plumbing)
+- [x] update the `telegram` block and the `monolog telegram status` row in `README.md`, and the `telegram` block in `docs/deploy/README.md`, with `daily_digest_time` and `daily_digest_tz` (not `env.example`, which holds only env vars); note that an empty tz means the host's local zone, which is often UTC on a systemd host
+- [x] move plan (deferred to orchestrator after reviews)
 
 ## Post-Completion
 *Informational only*

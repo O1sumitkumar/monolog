@@ -154,9 +154,18 @@ on its next pull, or edit it on the host directly.
   "enabled": true,
   "allowed_user_ids": [123456789],
   "pull_interval_seconds": 30,
-  "browse_limit": 20
+  "browse_limit": 20,
+  "daily_digest_time": "08:00",
+  "daily_digest_tz": "Europe/Riga"
 }
 ```
+
+`daily_digest_time` / `daily_digest_tz` are optional: with a time set, the bot
+sends each allow-listed user one message per day listing the tasks that rolled
+into Today. The tz only decides when it fires; an empty `daily_digest_tz` means
+the host's local zone, which is often UTC on a systemd host, so set it
+explicitly. There is no catch-up: a restart after the fire time waits for
+tomorrow. A bad value disables the digest with a warning in the journal.
 
 `pull_interval_seconds` is the **background** pull ticker — the safety net
 that keeps the clone fresh and clears a read-only state while nobody is
