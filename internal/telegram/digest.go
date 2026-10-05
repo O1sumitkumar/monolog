@@ -1,11 +1,14 @@
 package telegram
 
 import (
+	"context"
+	"fmt"
 	"sort"
 	"time"
 
 	"github.com/maksmas/monolog/internal/model"
 	"github.com/maksmas/monolog/internal/schedule"
+	"github.com/maksmas/monolog/internal/store"
 )
 
 // nextFire returns the next wall-clock occurrence of hour:minute in loc that
@@ -55,4 +58,36 @@ func newlyToday(tasks []model.Task, now time.Time) []model.Task {
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Position < out[j].Position })
 	return out
+}
+
+// sendDigest sends the "new for Today" digest to every allow-listed user: a
+// header followed by one row per task with the summary keyboard. Nothing is
+// sent when no task rolled into Today. Everything is non-fatal and logged to
+// the handler's writer. It ignores the readOnly flag because it never writes.
+func (h *Handler) sendDigest(ctx context.Context) {
+	h.pullBeforeCommand()
+	open, err := h.listLocked(store.ListOptions{Status: "open"})
+	if err != nil {
+		fmt.Fprintf(h.writer, "telegram: digest: list: %v\n", err)
+		return
+	}
+	tasks := newlyToday(open, h.now())
+	if len(tasks) == 0 {
+		fmt.Fprintln(h.writer, "telegram: digest: nothing new for Today, not sending")
+		return
+	}
+	header := fmt.Sprintf("<b>New for Today</b> — %d", len(tasks))
+	for _, uid := range h.cfg.AllowedUserIDs {
+		// chatID == userID for private chats.
+		if _, err := h.bot.SendMessage(ctx, uid, header, nil); err != nil {
+			fmt.Fprintf(h.writer, "telegram: digest: send header to %d: %v\n", uid, err)
+			continue
+		}
+		for _, t := range tasks {
+			if _, err := h.bot.SendMessage(ctx, uid, FormatTaskRow(t), BuildSummaryKeyboard(t.ID)); err != nil {
+				fmt.Fprintf(h.writer, "telegram: digest: send row to %d: %v\n", uid, err)
+				break
+			}
+		}
+	}
 }

@@ -119,10 +119,10 @@
 - Modify: `internal/telegram/digest.go`
 - Modify: `internal/telegram/digest_test.go`
 
-- [ ] implement `(*Handler) sendDigest(ctx)`: `pullBeforeCommand()`, `listLocked(open)`, `newlyToday`; if empty, log and return
-- [ ] otherwise send the header plus per-task rows with `BuildSummaryKeyboard` to each `AllowedUserIDs` entry; log a failed send and continue with the next user
-- [ ] write tests with the fake `Bot`: an empty set sends nothing; header + rows reach every allowed user; one user's send error doesn't block the others; the digest still runs while `readOnly` is set; a failed pre-pull is non-fatal
-- [ ] run tests - must pass before task 6
+- [x] implement `(*Handler) sendDigest(ctx)`: `pullBeforeCommand()`, `listLocked(open)`, `newlyToday`; if empty, log and return
+- [x] otherwise send the header plus per-task rows with `BuildSummaryKeyboard` to each `AllowedUserIDs` entry; log a failed send and continue with the next user
+- [x] write tests with the fake `Bot`: an empty set sends nothing; header + rows reach every allowed user; one user's send error doesn't block the others; the digest still runs while `readOnly` is set; a failed pre-pull is non-fatal
+- [x] run tests - must pass before task 6
 
 ### Task 6: `runDigestTicker` and `Serve` wiring
 

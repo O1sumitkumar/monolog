@@ -1,11 +1,16 @@
 package telegram
 
 import (
+	"bytes"
+	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/maksmas/monolog/internal/model"
 	"github.com/maksmas/monolog/internal/schedule"
+	"github.com/maksmas/monolog/internal/store"
 )
 
 func TestNextFire(t *testing.T) {
@@ -132,5 +137,126 @@ func TestNewlyTodayParityWithTodayBucket(t *testing.T) {
 		if got := newlyToday(tasks, now); len(got) != 1 || got[0].ID != "exact" {
 			t.Errorf("now=%v: got %+v, want only exact", now, got)
 		}
+	}
+}
+
+// perUserFailBot fails SendMessage for one chat ID and delegates the rest.
+type perUserFailBot struct {
+	*fakeBot
+	failChat int64
+}
+
+func (b *perUserFailBot) SendMessage(ctx context.Context, chatID int64, html string, kb InlineKeyboard) (int, error) {
+	if chatID == b.failChat {
+		return 0, errors.New("blocked by user")
+	}
+	return b.fakeBot.SendMessage(ctx, chatID, html, kb)
+}
+
+func seedDigestTask(t *testing.T, s *store.Store, id, created string, pos float64) {
+	t.Helper()
+	task := model.Task{
+		ID: id, Title: "task " + id, Status: "open", Schedule: handlerTestNow.Format("2006-01-02"),
+		CreatedAt: created, UpdatedAt: created, Position: pos,
+	}
+	if err := s.Create(task); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+}
+
+const digestYesterday = "2026-05-17T10:00:00Z"
+
+func TestSendDigestEmptySendsNothing(t *testing.T) {
+	h, bot, s, _ := newTestHandler(t, []int64{1, 2})
+	var log bytes.Buffer
+	h.SetWriter(&log)
+	// created today: excluded
+	seedDigestTask(t, s, "01JDIGEST0000000000000000A", handlerTestNow.Format(time.RFC3339), 1000)
+	h.sendDigest(context.Background())
+	if len(bot.sent) != 0 {
+		t.Fatalf("sent=%d want 0", len(bot.sent))
+	}
+	if !strings.Contains(log.String(), "nothing new") {
+		t.Errorf("log missing note: %q", log.String())
+	}
+}
+
+func TestSendDigestReachesEveryUser(t *testing.T) {
+	h, bot, s, _ := newTestHandler(t, []int64{1, 2})
+	seedDigestTask(t, s, "01JDIGEST0000000000000000B", digestYesterday, 2000)
+	seedDigestTask(t, s, "01JDIGEST0000000000000000A", digestYesterday, 1000)
+	h.sendDigest(context.Background())
+	if len(bot.sent) != 6 {
+		t.Fatalf("sent=%d want 6: %+v", len(bot.sent), bot.sent)
+	}
+	for i, uid := range []int64{1, 2} {
+		batch := bot.sent[i*3 : i*3+3]
+		for _, m := range batch {
+			if m.ChatID != uid {
+				t.Errorf("chat=%d want %d", m.ChatID, uid)
+			}
+		}
+		if !strings.Contains(batch[0].HTML, "New for Today") || !strings.Contains(batch[0].HTML, "2") {
+			t.Errorf("header=%q", batch[0].HTML)
+		}
+		if !strings.Contains(batch[1].HTML, "task 01JDIGEST0000000000000000A") ||
+			!strings.Contains(batch[2].HTML, "task 01JDIGEST0000000000000000B") {
+			t.Errorf("rows out of position order: %q, %q", batch[1].HTML, batch[2].HTML)
+		}
+		if len(batch[1].Keyboard) == 0 {
+			t.Errorf("row missing keyboard")
+		}
+	}
+}
+
+func TestSendDigestOneUserFailureDoesNotBlockOthers(t *testing.T) {
+	h, _, s, _ := newTestHandler(t, []int64{1, 2})
+	fb := &fakeBot{}
+	h.bot = &perUserFailBot{fakeBot: fb, failChat: 1}
+	var log bytes.Buffer
+	h.SetWriter(&log)
+	seedDigestTask(t, s, "01JDIGEST0000000000000000A", digestYesterday, 1000)
+	h.sendDigest(context.Background())
+	if len(fb.sent) != 2 {
+		t.Fatalf("sent=%d want 2", len(fb.sent))
+	}
+	for _, m := range fb.sent {
+		if m.ChatID != 2 {
+			t.Errorf("chat=%d want 2", m.ChatID)
+		}
+	}
+	if !strings.Contains(log.String(), "send header to 1") {
+		t.Errorf("failure not logged: %q", log.String())
+	}
+}
+
+func TestSendDigestIgnoresReadOnly(t *testing.T) {
+	h, bot, s, _ := newTestHandler(t, []int64{1})
+	h.SetReadOnly(true)
+	seedDigestTask(t, s, "01JDIGEST0000000000000000A", digestYesterday, 1000)
+	h.sendDigest(context.Background())
+	if len(bot.sent) != 2 {
+		t.Fatalf("sent=%d want 2", len(bot.sent))
+	}
+	for _, m := range bot.sent {
+		if strings.Contains(m.HTML, "read-only") {
+			t.Errorf("unexpected banner: %q", m.HTML)
+		}
+	}
+}
+
+func TestSendDigestFailedPullIsNonFatal(t *testing.T) {
+	// TestMain's default pullFunc stub returns an error; the digest must
+	// still be served from local state.
+	h, bot, s, _ := newTestHandler(t, []int64{1})
+	var log bytes.Buffer
+	h.SetWriter(&log)
+	seedDigestTask(t, s, "01JDIGEST0000000000000000A", digestYesterday, 1000)
+	h.sendDigest(context.Background())
+	if len(bot.sent) != 2 {
+		t.Fatalf("sent=%d want 2", len(bot.sent))
+	}
+	if !strings.Contains(log.String(), "command pull") {
+		t.Errorf("pull failure not logged: %q", log.String())
 	}
 }
