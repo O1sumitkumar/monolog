@@ -131,12 +131,12 @@
 - Modify: `internal/launch/launch.go`
 - Modify: `internal/launch/launch_test.go`
 
-- [ ] implement `Run(ctx, argv, dir)` with `exec.CommandContext`, `cmd.Dir`, `Setsid: true`, bounded `WaitDelay`, `CombinedOutput`, first-line-of-output error wrapping, empty-argv error
-- [ ] write test: child cannot reach a controlling terminal — `sh -c ': </dev/tty'` returns an error
-- [ ] treat `exec.ErrWaitDelay` with a successful `ProcessState` as success
-- [ ] write tests (real `sh`, skip on Windows): exit 0 → nil; `sh -c 'echo boom >&2; exit 3'` → error containing `boom`; missing binary → error; `cmd.Dir` honored (`sh -c 'pwd > out'` in a temp dir); argv element containing spaces/newlines reaches the child verbatim (`printf %s "$1" > file`)
-- [ ] write tests: context timeout kills a `sleep 10` within the deadline; `sh -c 'sleep 5 & exit 0'` (background child holding the pipe) returns nil within ~WaitDelay
-- [ ] run `go test ./internal/launch/` - must pass before task 4
+- [x] implement `Run(ctx, argv, dir)` with `exec.CommandContext`, `cmd.Dir`, `Setsid: true`, bounded `WaitDelay`, `CombinedOutput`, first-line-of-output error wrapping, empty-argv error
+- [x] write test: child cannot reach a controlling terminal — `sh -c ': </dev/tty'` returns an error
+- [x] treat `exec.ErrWaitDelay` with a successful `ProcessState` as success
+- [x] write tests (real `sh`, skip on Windows): exit 0 → nil; `sh -c 'echo boom >&2; exit 3'` → error containing `boom`; missing binary → error; `cmd.Dir` honored (`sh -c 'pwd > out'` in a temp dir); argv element containing spaces/newlines reaches the child verbatim (`printf %s "$1" > file`)
+- [x] write tests: context timeout kills a `sleep 10` within the deadline; `sh -c 'sleep 5 & exit 0'` (background child holding the pipe) returns nil within ~WaitDelay
+- [x] run `go test ./internal/launch/` - must pass before task 4
 
 ### Task 4: Extract `activateCmd` from `toggleActive`
 

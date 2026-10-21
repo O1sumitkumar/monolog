@@ -7,10 +7,15 @@
 package launch
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/maksmas/monolog/internal/model"
 )
@@ -73,4 +78,43 @@ func BuildArgv(command []string, dir, prompt string) []string {
 		argv[i] = r.Replace(el)
 	}
 	return argv
+}
+
+// waitDelay bounds how long Run waits for the child's output pipe to close
+// after the child exits or is killed.
+const waitDelay = time.Second
+
+// Run executes argv in dir and returns once the launcher exits. The child gets
+// no stdin and runs in a new session (Setsid), so it has no controlling
+// terminal: a launcher that falls back to /dev/tty (kitty @ without
+// KITTY_LISTEN_ON does) fails cleanly instead of racing Bubble Tea's raw-mode
+// reader for the tty. A failure carries the first line of the child's output.
+func Run(ctx context.Context, argv []string, dir string) error {
+	if len(argv) == 0 {
+		return errors.New("empty launch command")
+	}
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cmd.Dir = dir
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd.WaitDelay = waitDelay
+	out, err := cmd.CombinedOutput()
+	// A launcher that exits 0 while a grandchild still holds the inherited
+	// pipe trips WaitDelay; that is a success, as in git.waitDelayAfterSuccess.
+	if err == nil || (errors.Is(err, exec.ErrWaitDelay) && cmd.ProcessState != nil && cmd.ProcessState.Success()) {
+		return nil
+	}
+	if line := firstLine(string(out)); line != "" {
+		return fmt.Errorf("%w: %s", err, line)
+	}
+	return err
+}
+
+// firstLine returns the first non-blank line of s, trimmed.
+func firstLine(s string) string {
+	for _, line := range strings.Split(s, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			return line
+		}
+	}
+	return ""
 }

@@ -1,9 +1,15 @@
 package launch
 
 import (
+	"context"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestResolveDir(t *testing.T) {
@@ -154,5 +160,127 @@ func TestBuildArgv_ReturnsNewSlice(t *testing.T) {
 	}
 	if strings.Join(BuildArgv(nil, "/d", "p"), "") != "" {
 		t.Error("nil command should give an empty argv")
+	}
+}
+
+// requireSh skips tests that exec a real shell where none is available.
+func requireSh(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("launch.Run is unix-only")
+	}
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh not found")
+	}
+}
+
+func TestRunSuccess(t *testing.T) {
+	requireSh(t)
+	if err := Run(context.Background(), []string{"sh", "-c", "exit 0"}, t.TempDir()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+}
+
+func TestRunFailureCarriesOutput(t *testing.T) {
+	requireSh(t)
+	err := Run(context.Background(), []string{"sh", "-c", "echo; echo boom >&2; echo second >&2; exit 3"}, t.TempDir())
+	if err == nil {
+		t.Fatal("want error for exit 3")
+	}
+	if !strings.Contains(err.Error(), "boom") {
+		t.Errorf("error %q should carry the first output line", err)
+	}
+	if strings.Contains(err.Error(), "second") {
+		t.Errorf("error %q should carry only the first output line", err)
+	}
+	if !strings.Contains(err.Error(), "exit status 3") {
+		t.Errorf("error %q should wrap the exit status", err)
+	}
+}
+
+func TestRunFailureWithoutOutput(t *testing.T) {
+	requireSh(t)
+	err := Run(context.Background(), []string{"sh", "-c", "exit 2"}, t.TempDir())
+	if err == nil || err.Error() != "exit status 2" {
+		t.Errorf("got %v, want bare exit status", err)
+	}
+}
+
+func TestRunMissingBinary(t *testing.T) {
+	if err := Run(context.Background(), []string{"monolog-no-such-launcher-xyz"}, t.TempDir()); err == nil {
+		t.Fatal("want error for missing binary")
+	}
+}
+
+func TestRunEmptyArgv(t *testing.T) {
+	if err := Run(context.Background(), nil, t.TempDir()); err == nil {
+		t.Fatal("want error for empty argv")
+	}
+}
+
+func TestRunHonorsDir(t *testing.T) {
+	requireSh(t)
+	dir := t.TempDir()
+	if err := Run(context.Background(), []string{"sh", "-c", "pwd > out"}, dir); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "out"))
+	if err != nil {
+		t.Fatalf("read out: %v", err)
+	}
+	want, _ := filepath.EvalSymlinks(dir)
+	gotDir, _ := filepath.EvalSymlinks(strings.TrimSpace(string(got)))
+	if gotDir != want {
+		t.Errorf("child cwd = %q, want %q", gotDir, want)
+	}
+}
+
+func TestRunPassesArgVerbatim(t *testing.T) {
+	requireSh(t)
+	dir := t.TempDir()
+	arg := "Lets work on \"it\" 'now'\n\nbody with `ticks` and $(rm -rf ~) {dir}"
+	if err := Run(context.Background(), []string{"sh", "-c", `printf %s "$1" > file`, "sh", arg}, dir); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "file"))
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+	if string(got) != arg {
+		t.Errorf("child got %q, want %q", got, arg)
+	}
+}
+
+// TestRunNoControllingTerminal only discriminates when the test process has a
+// controlling terminal (a developer's shell); without one /dev/tty fails anyway.
+func TestRunNoControllingTerminal(t *testing.T) {
+	requireSh(t)
+	if err := Run(context.Background(), []string{"sh", "-c", ": </dev/tty"}, t.TempDir()); err == nil {
+		t.Fatal("child opened /dev/tty; it must run without a controlling terminal")
+	}
+}
+
+func TestRunContextTimeoutKills(t *testing.T) {
+	requireSh(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	err := Run(ctx, []string{"sleep", "10"}, t.TempDir())
+	if err == nil {
+		t.Fatal("want error when the context deadline kills the child")
+	}
+	if elapsed := time.Since(start); elapsed > 200*time.Millisecond+waitDelay+time.Second {
+		t.Errorf("Run took %v, should return shortly after the deadline", elapsed)
+	}
+}
+
+func TestRunBackgroundChildHoldingPipe(t *testing.T) {
+	requireSh(t)
+	start := time.Now()
+	if err := Run(context.Background(), []string{"sh", "-c", "sleep 5 & exit 0"}, t.TempDir()); err != nil {
+		t.Fatalf("launcher exited 0, want nil error, got %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > waitDelay+2*time.Second {
+		t.Errorf("Run took %v, should return within about WaitDelay", elapsed)
 	}
 }
