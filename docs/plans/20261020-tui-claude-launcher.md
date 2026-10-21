@@ -118,12 +118,12 @@
 - Create: `internal/launch/launch.go`
 - Create: `internal/launch/launch_test.go`
 
-- [ ] create package doc + `ResolveDir` with tag-order resolution, skipping `active` and `claude`, `default_dir` fallback, and the `no launch dir for tags [...]` error
-- [ ] add `expandHome` (leading `~` / `~/` only; `~user` and mid-path `~` untouched)
-- [ ] add `BuildPrompt(id, title, body)` and `BuildArgv(command, dir, prompt)` using a single-pass `strings.NewReplacer`
-- [ ] write table tests for `ResolveDir`: first matching tag wins by task-tag order; `active`/`claude` skipped even if mapped; unmapped tags → default; no match + empty default → error naming the tags; `~` and `~/x` expanded (via `t.Setenv("HOME", ...)`); `~user/x` untouched
-- [ ] write table tests for `BuildPrompt` (empty/whitespace body → no trailing blank lines; multi-line body preserved) and `BuildArgv` (placeholders replaced in every element including mid-string `--cwd={dir}`; prompt with quotes, newlines, backticks and `$(rm -rf ~)` survives as one exact element; literal `{dir}` inside the prompt not re-substituted; input slice not mutated; elements without placeholders unchanged)
-- [ ] run `go test ./internal/launch/` - must pass before task 3
+- [x] create package doc + `ResolveDir` with tag-order resolution, skipping `active` and `claude`, `default_dir` fallback, and the `no launch dir for tags [...]` error
+- [x] add `expandHome` (leading `~` / `~/` only; `~user` and mid-path `~` untouched)
+- [x] add `BuildPrompt(id, title, body)` and `BuildArgv(command, dir, prompt)` using a single-pass `strings.NewReplacer`
+- [x] write table tests for `ResolveDir`: first matching tag wins by task-tag order; `active`/`claude` skipped even if mapped; unmapped tags → default; no match + empty default → error naming the tags; `~` and `~/x` expanded (via `t.Setenv("HOME", ...)`); `~user/x` untouched
+- [x] write table tests for `BuildPrompt` (empty/whitespace body → no trailing blank lines; multi-line body preserved) and `BuildArgv` (placeholders replaced in every element including mid-string `--cwd={dir}`; prompt with quotes, newlines, backticks and `$(rm -rf ~)` survives as one exact element; literal `{dir}` inside the prompt not re-substituted; input slice not mutated; elements without placeholders unchanged)
+- [x] run `go test ./internal/launch/` - must pass before task 3
 
 ### Task 3: `launch.Run` process execution
 
