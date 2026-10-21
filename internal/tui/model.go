@@ -3546,14 +3546,21 @@ func (m *Model) helpLine() string {
 		if m.emailEnabled {
 			syncLabel = "full sync (git+email)"
 		}
+		// The "o" hint sits right after "a" rather than at the end:
+		// renderHelpBar drops hints from the right on narrow terminals.
+		hints := [][2]string{
+			{"d", "done"},
+			{"e", "edit"},
+			{"c", "create"},
+			{"r", "date"},
+			{"t", "tag"},
+			{"a", "active"},
+		}
+		if m.launchConfigured() {
+			hints = append(hints, [2]string{"o", "claude"})
+		}
 		if m.viewMode == viewTag {
-			return m.renderHelpBar(
-				[2]string{"d", "done"},
-				[2]string{"e", "edit"},
-				[2]string{"c", "create"},
-				[2]string{"r", "date"},
-				[2]string{"t", "tag"},
-				[2]string{"a", "active"},
+			hints = append(hints,
 				[2]string{"m", "grab"},
 				[2]string{"/", "search"},
 				[2]string{"v", "schedule"},
@@ -3566,14 +3573,9 @@ func (m *Model) helpLine() string {
 				[2]string{"h", "help"},
 				[2]string{"q", "quit"},
 			)
+			return m.renderHelpBar(hints...)
 		}
-		return m.renderHelpBar(
-			[2]string{"d", "done"},
-			[2]string{"e", "edit"},
-			[2]string{"c", "create"},
-			[2]string{"r", "date"},
-			[2]string{"t", "tag"},
-			[2]string{"a", "active"},
+		hints = append(hints,
 			[2]string{"m", "grab"},
 			[2]string{"/", "search"},
 			[2]string{"v", "tags"},
@@ -3588,6 +3590,7 @@ func (m *Model) helpLine() string {
 			[2]string{"h", "help"},
 			[2]string{"q", "quit"},
 		)
+		return m.renderHelpBar(hints...)
 	case modeSettings:
 		return m.styles.helpStyle.Render("↑↓ navigate  ←→ change  Enter save  Esc cancel")
 	case modeHelp:
@@ -3803,6 +3806,7 @@ func (m *Model) helpModalContent() string {
 		"  " + k("x") + "    delete\n" +
 		"  " + k("m") + "    grab / reorder\n" +
 		"  " + k("a") + "    toggle active\n" +
+		"  " + k("o") + "    open in Claude Code (and activate)\n" +
 		"  " + k("/") + "    search\n" +
 		"  " + k("v") + "    toggle view\n" +
 		"  " + k("↵") + "    notes panel\n" +

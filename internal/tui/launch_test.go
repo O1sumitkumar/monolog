@@ -455,3 +455,36 @@ func TestNewModel_SnapshotsLaunchConfig(t *testing.T) {
 		t.Error("launchConfigured() = false, want true")
 	}
 }
+
+func TestHelpLine_ClaudeHintOnlyWhenLaunchConfigured(t *testing.T) {
+	for _, view := range []struct {
+		name string
+		mode viewMode
+	}{{"schedule view", viewSchedule}, {"tag view", viewTag}} {
+		t.Run(view.name, func(t *testing.T) {
+			m := newTestModel(t)
+			m.width = 400
+			m.viewMode = view.mode
+
+			if h := m.helpLine(); strings.Contains(h, "claude") {
+				t.Errorf("unconfigured help line has claude hint: %q", h)
+			}
+
+			m.launchCfg = testLaunchCfg(t.TempDir())
+			h := m.helpLine()
+			if !strings.Contains(h, "claude") {
+				t.Errorf("configured help line missing claude hint: %q", h)
+			}
+			if a, o := strings.Index(h, "active"), strings.Index(h, "claude"); a < 0 || o < a {
+				t.Errorf("claude hint should follow the active hint: %q", h)
+			}
+		})
+	}
+}
+
+func TestHelpModalContent_ListsLaunchKey(t *testing.T) {
+	m := newTestModel(t)
+	if help := m.helpModalContent(); !strings.Contains(help, "open in Claude Code (and activate)") {
+		t.Errorf("help overlay missing o line:\n%s", help)
+	}
+}

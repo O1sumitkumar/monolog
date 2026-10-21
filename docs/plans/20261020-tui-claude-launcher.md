@@ -173,10 +173,10 @@
 - Modify: `internal/tui/model.go`
 - Modify: `internal/tui/launch_test.go`
 
-- [ ] add `{"o", "claude"}` right after `{"a", "active"}` in both `renderHelpBar` hint lists (tag view + schedule view) only when `launchConfigured()` — early placement because `renderHelpBar` drops hints from the right when they exceed `m.width` (`model.go:3393`); the variadic literals become slices for the conditional insert
-- [ ] add an `o    open in Claude Code (and activate)` line to the `h` help overlay (always listed, mirrors other keys)
-- [ ] write tests (with `m.width` wide enough): help line contains `claude` hint when configured, absent when not (both view modes); help overlay contains the `o` line
-- [ ] run `go test ./internal/tui/` - must pass before task 7
+- [x] add `{"o", "claude"}` right after `{"a", "active"}` in both `renderHelpBar` hint lists (tag view + schedule view) only when `launchConfigured()` — early placement because `renderHelpBar` drops hints from the right when they exceed `m.width` (`model.go:3393`); the variadic literals become slices for the conditional insert
+- [x] add an `o    open in Claude Code (and activate)` line to the `h` help overlay (always listed, mirrors other keys)
+- [x] write tests (with `m.width` wide enough): help line contains `claude` hint when configured, absent when not (both view modes); help overlay contains the `o` line
+- [x] run `go test ./internal/tui/` - must pass before task 7
 
 ### Task 7: Verify acceptance criteria
 - [ ] verify all requirements from Overview are implemented (key, tag → dir, prompt shape, launch-then-activate, TUI-only, off when unconfigured)
