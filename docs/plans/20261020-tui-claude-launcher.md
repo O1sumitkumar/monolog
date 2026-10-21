@@ -104,13 +104,13 @@
 - Modify: `internal/config/config.go`
 - Modify: `internal/config/config_test.go`
 
-- [ ] add `LaunchConfig` struct (doc comment noting `internal/launch` must not import config), package var, `resetLaunchCfgToDefaults`, `launchBlock` JSON struct
-- [ ] wire into `Load`: reset at top, `Launch json.RawMessage \`json:"launch,omitempty"\`` field, separate `json.Unmarshal` into `launchBlock`; on error leave launch zero-valued without returning early
-- [ ] add `Launch() LaunchConfig` accessor returning a copy (copy the `Command` slice and `Dirs` map so callers cannot mutate package state)
-- [ ] write tests: full block parses (command order preserved, dirs, default_dir); absent block → zero value; `Load` on a second dir without the block resets a previously loaded block; returned value is a defensive copy
-- [ ] write test: launch block with wrong types (`"command": "kitty @ launch"`) leaves launch disabled **and** `date_format` and `telegram.enabled` from the same file still load
-- [ ] write one round-trip test: `Save` preserves an existing `launch` block (re-`Load` and compare) — the other writers share the same map read-modify-write already covered by existing foreign-key tests
-- [ ] run `go test ./internal/config/` - must pass before task 2
+- [x] add `LaunchConfig` struct (doc comment noting `internal/launch` must not import config), package var, `resetLaunchCfgToDefaults`, `launchBlock` JSON struct
+- [x] wire into `Load`: reset at top, `Launch json.RawMessage \`json:"launch,omitempty"\`` field, separate `json.Unmarshal` into `launchBlock`; on error leave launch zero-valued without returning early
+- [x] add `Launch() LaunchConfig` accessor returning a copy (copy the `Command` slice and `Dirs` map so callers cannot mutate package state)
+- [x] write tests: full block parses (command order preserved, dirs, default_dir); absent block → zero value; `Load` on a second dir without the block resets a previously loaded block; returned value is a defensive copy
+- [x] write test: launch block with wrong types (`"command": "kitty @ launch"`) leaves launch disabled **and** `date_format` and `telegram.enabled` from the same file still load
+- [x] write one round-trip test: `Save` preserves an existing `launch` block (re-`Load` and compare) — the other writers share the same map read-modify-write already covered by existing foreign-key tests
+- [x] run `go test ./internal/config/` - must pass before task 2
 
 ### Task 2: Pure launch helpers (`ResolveDir`, `BuildPrompt`, `BuildArgv`)
 
