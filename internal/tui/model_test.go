@@ -1485,19 +1485,21 @@ func TestTUI_ActivateRebalancesTodayBucketCleanly(t *testing.T) {
 
 // TestTUI_ActivateCmdVerbPrefixesStatus pins activateCmd's contract for both
 // callers: the verb prefixes the status, the "(moved to Today)" suffix appears
-// only when the bucket actually changed, and a real commit SHA comes back so
-// undo and auto-push fire.
+// only when the bucket actually changed, a real commit SHA comes back so undo
+// and auto-push fire, and focus alone decides whether the reload jumps to it.
 func TestTUI_ActivateCmdVerbPrefixesStatus(t *testing.T) {
 	cases := []struct {
 		verb, id, wantStatus string
+		focus                bool
 	}{
-		{"launched", "01WEEK", "launched: week task (moved to Today)"},
-		{"launched", "01TODAY", "launched: today task"},
-		{"activated", "01WEEK", "activated: week task (moved to Today)"},
-		{"activated", "01TODAY", "activated: today task"},
+		{"launched", "01WEEK", "launched: week task (moved to Today)", true},
+		{"launched", "01TODAY", "launched: today task", true},
+		{"launched", "01WEEK", "launched: week task (moved to Today)", false},
+		{"activated", "01WEEK", "activated: week task (moved to Today)", true},
+		{"activated", "01TODAY", "activated: today task", true},
 	}
 	for _, tc := range cases {
-		t.Run(tc.verb+"/"+tc.id, func(t *testing.T) {
+		t.Run(fmt.Sprintf("%s/%s/focus=%v", tc.verb, tc.id, tc.focus), func(t *testing.T) {
 			m := newTestModel(t,
 				model.Task{ID: "01TODAY", Title: "today task", Status: "open", Schedule: "today",
 					Position: 1000, UpdatedAt: "2026-04-13T00:00:00Z"},
@@ -1508,7 +1510,7 @@ func TestTUI_ActivateCmdVerbPrefixesStatus(t *testing.T) {
 			if err != nil {
 				t.Fatalf("get: %v", err)
 			}
-			cmd := m.activateCmd(task, tc.verb)
+			cmd := m.activateCmd(task, tc.verb, tc.focus)
 			if cmd == nil {
 				t.Fatal("activateCmd returned nil cmd")
 			}
@@ -1525,8 +1527,12 @@ func TestTUI_ActivateCmdVerbPrefixesStatus(t *testing.T) {
 			if saved.sha == "" {
 				t.Error("sha is empty, want the activation commit's SHA")
 			}
-			if saved.focusID != tc.id {
-				t.Errorf("focusID = %q, want %q", saved.focusID, tc.id)
+			wantFocus := ""
+			if tc.focus {
+				wantFocus = tc.id
+			}
+			if saved.focusID != wantFocus {
+				t.Errorf("focusID = %q, want %q", saved.focusID, wantFocus)
 			}
 			got, err := m.store.GetByPrefix(tc.id)
 			if err != nil {

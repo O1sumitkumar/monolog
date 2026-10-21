@@ -86,7 +86,7 @@ func TestResolveDir_Errors(t *testing.T) {
 		{"relative mapping rejected", []string{"p"}, map[string]string{"p": "src/p"}, "", "/home/u", "launch dir must be absolute: src/p"},
 		{"relative default rejected", []string{"x"}, nil, "./repos", "/home/u", "launch dir must be absolute: ./repos"},
 		{"tilde user is not expanded, so it is relative", []string{"otheruser"}, map[string]string{"otheruser": "~bob/x"}, "", "/home/u", "launch dir must be absolute: ~bob/x"},
-		{"unset HOME fails tilde expansion", []string{"p"}, map[string]string{"p": "~/x"}, "", "", "expand ~/x"},
+		{"unset HOME fails tilde expansion", []string{"p"}, map[string]string{"p": "~/x"}, "", "", "launch dir ~/x: "},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

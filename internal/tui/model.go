@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -22,7 +21,6 @@ import (
 	"github.com/maksmas/monolog/internal/config"
 	"github.com/maksmas/monolog/internal/display"
 	"github.com/maksmas/monolog/internal/git"
-	"github.com/maksmas/monolog/internal/launch"
 	"github.com/maksmas/monolog/internal/model"
 	"github.com/maksmas/monolog/internal/ordering"
 	"github.com/maksmas/monolog/internal/recurrence"
@@ -1098,7 +1096,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(archiveCmd, pushCmd)
 
-	case launchResultMsg:
+	case launchResult:
 		return m, m.handleLaunchResult(msg)
 
 	case archiveResult:
@@ -1554,7 +1552,7 @@ func (m *Model) toggleActive() tea.Cmd {
 	}
 	t := *task
 	if !t.IsActive() {
-		return m.activateCmd(t, "activated")
+		return m.activateCmd(t, "activated", true)
 	}
 	// Deactivating never moves the task.
 	t.SetActive(false)
@@ -1565,8 +1563,9 @@ func (m *Model) toggleActive() tea.Cmd {
 
 // activateCmd marks t active and commits it, reporting "<verb>: <title>" in
 // the status bar. Shared by the `a` toggle and the `o` launch so both take the
-// same move-to-Today, undo and auto-push path.
-func (m *Model) activateCmd(t model.Task, verb string) tea.Cmd {
+// same move-to-Today, undo and auto-push path. focus makes the reload jump the
+// cursor to t; the launch passes false when the user has moved on meanwhile.
+func (m *Model) activateCmd(t model.Task, verb string, focus bool) tea.Cmd {
 	t.SetActive(true)
 	t.UpdatedAt = now()
 	flat := flattenTitle(t.Title)
@@ -1627,102 +1626,12 @@ func (m *Model) activateCmd(t model.Task, verb string) tea.Cmd {
 			// otherwise read as a bug rather than the intended behavior.
 			status = fmt.Sprintf("%s: %s (moved to Today)", verb, flat)
 		}
-		return taskSavedMsg{status: status, focusID: t.ID, sha: sha}
-	}
-}
-
-// --- launch in Claude Code ------------------------------------------------
-
-// launchTimeout bounds the launcher process. `kitty @ launch` returns as soon
-// as the tab exists, so anything slower is a hung launcher.
-const launchTimeout = 5 * time.Second
-
-// runLaunch is the seam tests replace so no test ever execs a real launcher.
-var runLaunch = launch.Run
-
-// launchResultMsg reports a finished launcher run for the task with taskID.
-// title is pre-flattened for the status bar.
-type launchResultMsg struct {
-	err    error
-	taskID string
-	title  string
-}
-
-func (m *Model) launchConfigured() bool {
-	return len(m.launchCfg.Command) > 0
-}
-
-// launchSelected opens the selected task in Claude Code via the configured
-// launcher. Every outcome is reported through statusMsg, never m.err, and
-// clears any earlier m.err: helpLine renders m.err ahead of statusMsg, so a
-// sticky error would hide every launch status.
-func (m *Model) launchSelected() tea.Cmd {
-	task := m.selectedTask()
-	if task == nil {
-		return nil
-	}
-	m.err = nil
-	if !m.launchConfigured() {
-		m.statusMsg = "launch not configured"
-		return nil
-	}
-	dir, err := launch.ResolveDir(task.Tags, m.launchCfg.Dirs, m.launchCfg.DefaultDir)
-	if err != nil {
-		m.statusMsg = err.Error()
-		return nil
-	}
-	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
-		m.statusMsg = "launch dir not found: " + dir
-		return nil
-	}
-	prompt := launch.BuildPrompt(task.ID, task.Title, task.Body)
-	argv := launch.BuildArgv(m.launchCfg.Command, dir, prompt)
-	return launchCmd(argv, dir, task.ID, flattenTitle(task.Title))
-}
-
-func launchCmd(argv []string, dir, taskID, title string) tea.Cmd {
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), launchTimeout)
-		defer cancel()
-		return launchResultMsg{err: runLaunch(ctx, argv, dir), taskID: taskID, title: title}
-	}
-}
-
-// handleLaunchResult activates the launched task once the launcher succeeded.
-// The task is re-read by ID because the selection, or the task itself, may
-// have changed while the launcher ran. A done or already-active task is left
-// alone — toggling an active one would deactivate it.
-func (m *Model) handleLaunchResult(msg launchResultMsg) tea.Cmd {
-	m.err = nil
-	if msg.err != nil {
-		m.statusMsg = "launch failed: " + msg.err.Error()
-		return nil
-	}
-	t, err := m.store.Get(msg.taskID)
-	switch {
-	case errors.Is(err, store.ErrNotFound):
-		m.statusMsg = fmt.Sprintf("launched: %s (task gone, not activated)", msg.title)
-	case err != nil:
-		m.statusMsg = fmt.Sprintf("launched: %s (not activated: %v)", msg.title, err)
-	case t.Status == "done" || t.IsActive():
-		m.statusMsg = "launched: " + msg.title
-	default:
-		cmd := m.activateCmd(t, "launched")
-		if sel := m.selectedTask(); sel != nil && sel.ID == msg.taskID {
-			return cmd
+		saved := taskSavedMsg{status: status, sha: sha}
+		if focus {
+			saved.focusID = t.ID
 		}
-		// The user moved on while the launcher ran: activate without the
-		// focus jump `a` does, so the cursor is not yanked back to Today.
-		return func() tea.Msg {
-			out := cmd()
-			if saved, ok := out.(taskSavedMsg); ok {
-				saved.focusID = ""
-				return saved
-			}
-			return out
-		}
+		return saved
 	}
-	return nil
 }
 
 // --- reschedule modal ------------------------------------------------------

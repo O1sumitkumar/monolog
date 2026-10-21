@@ -65,7 +65,7 @@ func expandHome(path string) (string, error) {
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", fmt.Errorf("expand %s: %w", path, err)
+		return "", fmt.Errorf("launch dir %s: %w", path, err)
 	}
 	return filepath.Join(home, strings.TrimPrefix(path, "~")), nil
 }
