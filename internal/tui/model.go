@@ -1541,15 +1541,23 @@ func (m *Model) toggleActive() tea.Cmd {
 		return nil
 	}
 	t := *task
-	wasActive := t.IsActive()
-	t.SetActive(!wasActive)
+	if !t.IsActive() {
+		return m.activateCmd(t, "activated")
+	}
+	// Deactivating never moves the task.
+	t.SetActive(false)
 	t.UpdatedAt = now()
 	flat := flattenTitle(t.Title)
+	return m.saveCmd(t, fmt.Sprintf("edit: %s", flat), fmt.Sprintf("deactivated: %s", flat))
+}
 
-	if wasActive {
-		// Deactivating never moves the task.
-		return m.saveCmd(t, fmt.Sprintf("edit: %s", flat), fmt.Sprintf("deactivated: %s", flat))
-	}
+// activateCmd marks t active and commits it, reporting "<verb>: <title>" in
+// the status bar. Shared by the `a` toggle and the `o` launch so both take the
+// same move-to-Today, undo and auto-push path.
+func (m *Model) activateCmd(t model.Task, verb string) tea.Cmd {
+	t.SetActive(true)
+	t.UpdatedAt = now()
+	flat := flattenTitle(t.Title)
 
 	// Activating pulls the task into today's bucket (unless it's already
 	// there — an overdue task's bucket is also Today, and we must not
@@ -1599,13 +1607,13 @@ func (m *Model) toggleActive() tea.Cmd {
 		if err != nil {
 			return taskSavedMsg{err: fmt.Errorf("commit: %w", err)}
 		}
-		status := fmt.Sprintf("activated: %s", flat)
+		status := fmt.Sprintf("%s: %s", verb, flat)
 		if movedToToday {
 			// Surfaces the bucket jump explicitly — from any other tab this
 			// otherwise looks like a plain activation, and the task silently
 			// vanishing from the current list (it moved to Today) would
 			// otherwise read as a bug rather than the intended behavior.
-			status = fmt.Sprintf("activated: %s (moved to Today)", flat)
+			status = fmt.Sprintf("%s: %s (moved to Today)", verb, flat)
 		}
 		return taskSavedMsg{status: status, focusID: t.ID, sha: sha}
 	}

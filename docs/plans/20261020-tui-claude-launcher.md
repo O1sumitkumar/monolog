@@ -144,11 +144,11 @@
 - Modify: `internal/tui/model.go`
 - Modify: `internal/tui/model_test.go`
 
-- [ ] extract the activation branch of `toggleActive` into `activateCmd(t model.Task, verb string) tea.Cmd` (sets `active` tag + `UpdatedAt`, move-to-Today, `PositionTop`, rebalance, multi-file `AutoCommitSHA`, status `"<verb>: <title>"` + `" (moved to Today)"` when moved)
-- [ ] make `toggleActive` call `activateCmd(*task, "activated")`; deactivate branch unchanged
-- [ ] confirm existing `a`-key tests pass unchanged (status strings, move-to-Today, overdue not clobbered, rebalance commits siblings)
-- [ ] write tests for `activateCmd` with verb `"launched"`: status prefix, moved-to-Today suffix only when bucket changed, returned `taskSavedMsg.sha` non-empty
-- [ ] run `go test ./internal/tui/` - must pass before task 5
+- [x] extract the activation branch of `toggleActive` into `activateCmd(t model.Task, verb string) tea.Cmd` (sets `active` tag + `UpdatedAt`, move-to-Today, `PositionTop`, rebalance, multi-file `AutoCommitSHA`, status `"<verb>: <title>"` + `" (moved to Today)"` when moved)
+- [x] make `toggleActive` call `activateCmd(*task, "activated")`; deactivate branch unchanged
+- [x] confirm existing `a`-key tests pass unchanged (status strings, move-to-Today, overdue not clobbered, rebalance commits siblings)
+- [x] write tests for `activateCmd` with verb `"launched"`: status prefix, moved-to-Today suffix only when bucket changed, returned `taskSavedMsg.sha` non-empty
+- [x] run `go test ./internal/tui/` - must pass before task 5
 
 ### Task 5: `o` key, launch command and result handling
 
