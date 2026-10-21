@@ -7,8 +7,9 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"syscall"
 	"testing"
+
+	"golang.org/x/sys/unix"
 )
 
 const sessionHelperEnv = "MONOLOG_LAUNCH_SESSION_HELPER"
@@ -19,7 +20,7 @@ func TestHelperProcess(t *testing.T) {
 	if os.Getenv(sessionHelperEnv) != "1" {
 		return
 	}
-	sid, err := syscall.Getsid(0)
+	sid, err := unix.Getsid(0)
 	leader := err == nil && sid == os.Getpid()
 	_ = os.WriteFile("leader", []byte(strconv.FormatBool(leader)), 0o644)
 	os.Exit(0)
