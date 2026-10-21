@@ -116,6 +116,28 @@ func defaultTelegramConfig() TelegramConfig {
 // telegramCfg holds the in-session telegram config populated by Load.
 var telegramCfg = defaultTelegramConfig()
 
+// LaunchConfig captures the optional "launch" block in config.json: the
+// argv template the TUI's `o` key runs to open a task in Claude Code, plus
+// the tag → directory map that picks its working directory. The zero value
+// means "not configured" (feature off); configured means len(Command) > 0.
+//
+// The TUI reads this once via Launch() and passes values into the launch
+// package — internal/launch/ MUST NOT import internal/config so it stays as
+// testable as schedule/display/model.
+type LaunchConfig struct {
+	Command    []string          `json:"command"`
+	Dirs       map[string]string `json:"dirs"`
+	DefaultDir string            `json:"default_dir"`
+}
+
+// launchCfg holds the in-session launch config populated by Load.
+var launchCfg LaunchConfig
+
+// Launch returns the current launch settings.
+func Launch() LaunchConfig {
+	return launchCfg
+}
+
 // autoPush holds the in-session auto-push setting populated by Load. The
 // default is ON: the bug this feature fixes is that pushing does not happen,
 // so shipping it opt-in would ship the broken behavior. Load reassigns it
@@ -349,6 +371,7 @@ func applyTelegramBlock(b telegramBlock) {
 func Load(monologDir string) error {
 	resetEmailCfgToDefaults()
 	resetTelegramCfgToDefaults()
+	launchCfg = LaunchConfig{}
 	autoPush = true
 
 	data, err := os.ReadFile(configPath(monologDir))
@@ -366,6 +389,11 @@ func Load(monologDir string) error {
 		// true default while an explicit "auto_push": false disables the
 		// feature. A plain bool would make a missing key mean false.
 		AutoPush *bool `json:"auto_push,omitempty"`
+		// Launch is decoded separately so a wrong-shape block (it has no
+		// writer command, so it is hand-typed) cannot reset every other
+		// setting — config.json is synced, so that would disable telegram on
+		// the bot host. A JSON syntax error anywhere still resets everything.
+		Launch json.RawMessage `json:"launch,omitempty"`
 	}
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil // malformed JSON, keep defaults
@@ -383,6 +411,13 @@ func Load(monologDir string) error {
 	}
 	if cfg.AutoPush != nil {
 		autoPush = *cfg.AutoPush
+	}
+	if len(cfg.Launch) > 0 {
+		// Decode into a local: Unmarshal fills fields before a type error.
+		var lc LaunchConfig
+		if err := json.Unmarshal(cfg.Launch, &lc); err == nil {
+			launchCfg = lc
+		}
 	}
 	return nil
 }

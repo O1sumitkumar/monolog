@@ -58,6 +58,7 @@ monolog                             # launch the interactive TUI
 - **Telegram bot** — opt-in long-polling bot to capture, browse, and complete tasks from your phone; optional daily digest of tasks that rolled into Today.
 - **Clickable URLs** — the TUI wraps URLs in OSC 8 hyperlinks so Cmd/Ctrl-click opens the browser.
 - **Notes** — append timestamped notes to any task from the CLI or the TUI detail panel.
+- **Open in Claude Code** — `o` in the TUI opens the focused task in a new terminal tab running Claude Code, in the repo its tags point at.
 - **Quick capture** — a Raycast script command + bookmarklet for browser capture, and a Claude Code skill that lets Claude file follow-up work into a quarantined queue.
 
 ## Concepts
@@ -243,6 +244,7 @@ Running `monolog` with no subcommand launches the interactive TUI. Tabs across t
 | `c` | Open the add-task modal (title + tags + recur fields, Tab to cycle). The Recur field shows a grammar hint (`monthly:N \| weekly:<day> \| workdays \| days:N`) and inline autocomplete as you type — Tab accepts the highlighted suggestion (replaces the field), Enter always submits the modal, Esc dismisses the dropdown. |
 | `d` | Mark focused task as done (if it has a recurrence rule, auto-spawns the next occurrence — see [Recurring tasks](#recurring-tasks)) |
 | `a` | Toggle active on the focused task |
+| `o` | Open the focused task in Claude Code in a new terminal tab, then mark it active — off until a `launch` block is configured (see [Open a task in Claude Code](#open-a-task-in-claude-code)) |
 | `r` | Reschedule (modal with 1–5 presets or 6 for custom date in the configured format or relative shorthands `Nd`/`Nw`/`Nm`, e.g. `3d`, `2w`, `1m`) |
 | `t` | Retag focused task |
 | `e` | Edit in `$EDITOR` (YAML round-trip; the YAML includes a `recurrence:` field you can set or clear, with a `# recurrence rules:` grammar header comment at the top) |
@@ -283,7 +285,7 @@ Persistent settings live in `<MONOLOG_DIR>/.monolog/config.json`:
 }
 ```
 
-The TUI settings modal (`,`) writes `theme` and `date_format`; the optional `email` and `telegram` blocks (documented below) are hand-edited or written by their respective `auth`/`serve` flows. Unknown keys are preserved on save.
+The TUI settings modal (`,`) writes `theme` and `date_format`; the optional `email` and `telegram` blocks (documented below) are hand-edited or written by their respective `auth`/`serve` flows, and the optional `launch` block is hand-edited only. Unknown keys are preserved on save.
 
 `auto_push` controls whether mutations push to the remote. It defaults to `true` — an absent key means enabled, so existing repos get auto-push without editing anything. Set it to `false` to keep commits local, or set `MONOLOG_NO_AUTOPUSH=1` for a one-off; the env var is a kill switch only and cannot re-enable a config file that says `false`.
 
@@ -520,6 +522,45 @@ monolog add "<title>" --tags claude -s someday --body "<where + why>"
 `--tags claude` is provenance and goes on every task the skill adds; `-s someday` keeps it out of your today and week views. Drain the queue when it suits you with `monolog ls --tag claude -s someday`, rescheduling what is worth doing and `monolog rm`-ing the rest. Before every unprompted write, Claude runs `monolog search` and appends a `monolog note` instead of filing a near-duplicate.
 
 See [`docs/claude-skill/README.md`](docs/claude-skill/README.md) for what the skill does, the full convention, and the one-line symlink install.
+
+## Open a task in Claude Code
+
+`o` in the TUI hands the focused task to Claude Code: it runs a configurable command — by default a new [kitty](https://sw.kovidgoyal.net/kitty/) tab — in the directory the task's tags point at, with Claude started on the prompt
+
+```text
+Lets work on monolog item <full ULID> <title>
+
+<body>
+```
+
+(the blank line and body are dropped when the body is empty). The TUI stays where it is. The feature is off until a `launch` block exists in `<MONOLOG_DIR>/.monolog/config.json`; until then `o` only flashes `launch not configured` and the bottom bar shows no `o` hint.
+
+```json
+"launch": {
+  "command": ["kitty", "@", "launch", "--type=tab", "--cwd={dir}", "claude", "{prompt}"],
+  "dirs": { "paperwall": "~/IdeaProjects/paperwall", "monolog": "~/IdeaProjects/monolog" },
+  "default_dir": "~/IdeaProjects"
+}
+```
+
+`command` is an argv array, not a shell line: `{dir}` and `{prompt}` are substituted inside each element and the result is executed directly, so the prompt reaches Claude as exactly one argument however many quotes, newlines, backticks or `$(...)` the body holds. The command also runs with `{dir}` as its working directory, so a launcher without a `--cwd` flag works too. Any other terminal or launcher is a config change only. A `launch` block with the wrong shape (say, `command` written as a string) just leaves the feature off — the rest of `config.json` still loads. A JSON syntax error anywhere in the file (including inside `launch`) still resets every setting. `config.json` syncs with your tasks, so a second device that runs the TUI needs the same repo layout as `dirs`, or should rely on `default_dir`.
+
+The directory is chosen from the task's tags, in the order the task lists them: the first tag with an entry in `dirs` wins. The reserved `active` tag and the skill's `claude` provenance tag are skipped even if you map them. With no match it falls back to `default_dir`; with no `default_dir` either, the status bar names the tags and nothing runs. A leading `~` expands to your home directory; a path that is still relative after that is refused with `launch dir must be absolute: <path>`, since the TUI's working directory is arbitrary. A resolved directory that does not exist reports `launch dir not found: <path>` instead of launching.
+
+Tasks filed by the [Claude Code skill](#claude-code-skill) carry no repo tag — the skill puts a repo-qualified path such as `monolog/internal/store/store.go:142` in the body and tags the task only `claude` — so on their own they open in `default_dir`. Either retag them with `t` while triaging so `dirs` picks the repo, or set `default_dir` to the parent of all your repos and let Claude follow the path in the body from there.
+
+The task is activated only after the launcher exits successfully, through the same path as `a` (move to the top of Today, one commit, undoable with `u`, auto-pushed) and with the status `launched: <title>`, plus ` (moved to Today)` when it jumped buckets. A failing launcher flashes `launch failed: <err>` and commits nothing. An already-active task stays active, a done task is launched but never reactivated, and the launched task is the one activated even if you moved the cursor while the launcher ran — in that case the cursor stays where you put it instead of jumping to Today. The launcher gets 5 seconds, after which it is killed and reports `launch failed: launcher timed out: context deadline exceeded`; `kitty @ launch` returns as soon as the tab exists.
+
+Treat the `launch` block as executable config: `o` runs whatever `command` says, and `config.json` syncs through your tasks remote, so anyone who can push to that remote can change what `o` runs on every device. The task body also goes into Claude's prompt unfiltered, including bodies written by someone else — an [imported email](#email-integration)'s snippet or a Telegram capture — so read a task before launching it if you did not write it.
+
+kitty needs remote control over a socket. Add this to `~/.config/kitty/kitty.conf` and restart kitty, so every kitty shell exports `KITTY_LISTEN_ON`:
+
+```text
+allow_remote_control socket-only
+listen_on unix:/tmp/kitty
+```
+
+Without `listen_on`, `kitty @` falls back to talking over the terminal itself, which would clash with the TUI's alt-screen. The launcher runs detached from the terminal, so that case fails cleanly as `launch failed: …` rather than garbling the screen.
 
 ## Date format
 

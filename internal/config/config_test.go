@@ -1311,3 +1311,150 @@ func TestSaveTelegramDigestRoundTrip(t *testing.T) {
 		t.Errorf("daily_digest_tz should be omitted when empty")
 	}
 }
+
+// --- launch ---
+
+func resetLaunchCfg(t *testing.T) {
+	t.Helper()
+	prev := launchCfg
+	t.Cleanup(func() { launchCfg = prev })
+}
+
+func TestLoadLaunchBlock(t *testing.T) {
+	resetLaunchCfg(t)
+	resetDateFormat(t)
+	tmpDir := t.TempDir()
+	writeConfigDoc(t, tmpDir, map[string]any{
+		"launch": map[string]any{
+			"command":     []string{"kitty", "@", "launch", "--type=tab", "--cwd={dir}", "claude", "{prompt}"},
+			"dirs":        map[string]string{"paperwall": "~/IdeaProjects/paperwall", "monolog": "~/IdeaProjects/monolog"},
+			"default_dir": "~/IdeaProjects",
+		},
+	})
+	if err := Load(tmpDir); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	got := Launch()
+	wantCmd := []string{"kitty", "@", "launch", "--type=tab", "--cwd={dir}", "claude", "{prompt}"}
+	if len(got.Command) != len(wantCmd) {
+		t.Fatalf("Command = %v, want %v", got.Command, wantCmd)
+	}
+	for i := range wantCmd {
+		if got.Command[i] != wantCmd[i] {
+			t.Errorf("Command[%d] = %q, want %q", i, got.Command[i], wantCmd[i])
+		}
+	}
+	if len(got.Dirs) != 2 || got.Dirs["paperwall"] != "~/IdeaProjects/paperwall" || got.Dirs["monolog"] != "~/IdeaProjects/monolog" {
+		t.Errorf("Dirs = %v", got.Dirs)
+	}
+	if got.DefaultDir != "~/IdeaProjects" {
+		t.Errorf("DefaultDir = %q, want %q", got.DefaultDir, "~/IdeaProjects")
+	}
+}
+
+func TestLaunchZeroWhenBlockAbsent(t *testing.T) {
+	resetLaunchCfg(t)
+	resetDateFormat(t)
+	tmpDir := t.TempDir()
+	writeConfigDoc(t, tmpDir, map[string]any{"theme": "default"})
+	if err := Load(tmpDir); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	got := Launch()
+	if got.Command != nil || got.Dirs != nil || got.DefaultDir != "" {
+		t.Errorf("Launch() = %+v, want zero value", got)
+	}
+}
+
+func TestLoadResetsLaunchBlockBetweenCalls(t *testing.T) {
+	resetLaunchCfg(t)
+	resetDateFormat(t)
+	withDir := t.TempDir()
+	writeConfigDoc(t, withDir, map[string]any{
+		"launch": map[string]any{"command": []string{"kitty"}, "default_dir": "/tmp"},
+	})
+	if err := Load(withDir); err != nil {
+		t.Fatalf("Load (with): %v", err)
+	}
+	if len(Launch().Command) == 0 {
+		t.Fatalf("expected Command after first Load")
+	}
+
+	withoutDir := t.TempDir()
+	writeConfigDoc(t, withoutDir, map[string]any{"theme": "default"})
+	if err := Load(withoutDir); err != nil {
+		t.Fatalf("Load (without): %v", err)
+	}
+	if got := Launch(); got.Command != nil || got.DefaultDir != "" {
+		t.Errorf("Launch() = %+v after Load with no launch block, want zero value (carry-over leak)", got)
+	}
+}
+
+func TestLoadMalformedLaunchBlockIsolated(t *testing.T) {
+	// A wrongly-typed launch block (command as a string) must disable only
+	// launch — every other setting in the same file still loads.
+	resetLaunchCfg(t)
+	resetTelegramCfg(t)
+	resetDateFormat(t)
+	tmpDir := t.TempDir()
+	writeConfigDoc(t, tmpDir, map[string]any{
+		"date_format": "2006-01-02",
+		"telegram":    map[string]any{"enabled": true},
+		"launch": map[string]any{
+			"command": "kitty @ launch",
+			"dirs":    map[string]string{"monolog": "/a"},
+		},
+	})
+	if err := Load(tmpDir); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := Launch(); got.Command != nil || got.Dirs != nil || got.DefaultDir != "" {
+		t.Errorf("Launch() = %+v, want zero value for malformed block", got)
+	}
+	if got := DateFormat(); got != "2006-01-02" {
+		t.Errorf("DateFormat() = %q, want %q", got, "2006-01-02")
+	}
+	if !Telegram().Enabled {
+		t.Errorf("Telegram().Enabled = false, want true (malformed launch block leaked)")
+	}
+}
+
+func TestSavePreservesLaunchBlock(t *testing.T) {
+	resetLaunchCfg(t)
+	resetDateFormat(t)
+	tmpDir := t.TempDir()
+	writeConfigDoc(t, tmpDir, map[string]any{
+		"launch": map[string]any{
+			"command":     []string{"kitty", "@", "launch", "--cwd={dir}", "claude", "{prompt}"},
+			"dirs":        map[string]string{"monolog": "~/IdeaProjects/monolog"},
+			"default_dir": "~/IdeaProjects",
+		},
+	})
+	if err := Load(tmpDir); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	before := Launch()
+
+	if err := Save(tmpDir, "dracula", "2006-01-02"); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	launchCfg = LaunchConfig{}
+	if err := Load(tmpDir); err != nil {
+		t.Fatalf("re-Load: %v", err)
+	}
+	after := Launch()
+	if len(after.Command) != len(before.Command) {
+		t.Fatalf("Command = %v after Save, want %v", after.Command, before.Command)
+	}
+	for i := range before.Command {
+		if after.Command[i] != before.Command[i] {
+			t.Errorf("Command[%d] = %q, want %q", i, after.Command[i], before.Command[i])
+		}
+	}
+	if after.Dirs["monolog"] != "~/IdeaProjects/monolog" || len(after.Dirs) != 1 {
+		t.Errorf("Dirs = %v after Save", after.Dirs)
+	}
+	if after.DefaultDir != "~/IdeaProjects" {
+		t.Errorf("DefaultDir = %q after Save", after.DefaultDir)
+	}
+}

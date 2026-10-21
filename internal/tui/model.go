@@ -238,6 +238,10 @@ type Model struct {
 	pushInFlight    bool
 	pushPending     bool
 
+	// launchCfg is snapshotted from config.Launch() in newModel; the `o` key
+	// is inert (status "launch not configured") while Command is empty.
+	launchCfg config.LaunchConfig
+
 	// watcher observes the tasks directory for changes made outside this
 	// process so the TUI can auto-refresh. nil when MONOLOG_NO_WATCH=1 is
 	// set, when fsnotify fails to start, or in tests that build a Model
@@ -496,6 +500,7 @@ func newModel(s *store.Store, repoPath string, opts Options) (*Model, error) {
 		emailMaxPerSync: ec.MaxPerSync,
 		emailInterval:   ec.SyncInterval,
 		autoPushEnabled: autoPush,
+		launchCfg:       config.Launch(),
 	}
 	m.baseStyles, m.grabStyles, m.activeStyles = initStyles(activeTheme)
 	if !ok {
@@ -1091,6 +1096,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(archiveCmd, pushCmd)
 
+	case launchResult:
+		return m, m.handleLaunchResult(msg)
+
 	case archiveResult:
 		// Archive is non-fatal: surface the result via a status flash but do
 		// not roll back the underlying done. The task stays done either way.
@@ -1311,6 +1319,8 @@ func (m *Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "a":
 		return m, m.toggleActive()
+	case "o":
+		return m, m.launchSelected()
 	case "e":
 		return m, m.openEdit()
 	case "s":
@@ -1541,15 +1551,24 @@ func (m *Model) toggleActive() tea.Cmd {
 		return nil
 	}
 	t := *task
-	wasActive := t.IsActive()
-	t.SetActive(!wasActive)
+	if !t.IsActive() {
+		return m.activateCmd(t, "activated", true)
+	}
+	// Deactivating never moves the task.
+	t.SetActive(false)
 	t.UpdatedAt = now()
 	flat := flattenTitle(t.Title)
+	return m.saveCmd(t, fmt.Sprintf("edit: %s", flat), fmt.Sprintf("deactivated: %s", flat))
+}
 
-	if wasActive {
-		// Deactivating never moves the task.
-		return m.saveCmd(t, fmt.Sprintf("edit: %s", flat), fmt.Sprintf("deactivated: %s", flat))
-	}
+// activateCmd marks t active and commits it, reporting "<verb>: <title>" in
+// the status bar. Shared by the `a` toggle and the `o` launch so both take the
+// same move-to-Today, undo and auto-push path. focus makes the reload jump the
+// cursor to t; the launch passes false when the user has moved on meanwhile.
+func (m *Model) activateCmd(t model.Task, verb string, focus bool) tea.Cmd {
+	t.SetActive(true)
+	t.UpdatedAt = now()
+	flat := flattenTitle(t.Title)
 
 	// Activating pulls the task into today's bucket (unless it's already
 	// there — an overdue task's bucket is also Today, and we must not
@@ -1599,15 +1618,19 @@ func (m *Model) toggleActive() tea.Cmd {
 		if err != nil {
 			return taskSavedMsg{err: fmt.Errorf("commit: %w", err)}
 		}
-		status := fmt.Sprintf("activated: %s", flat)
+		status := fmt.Sprintf("%s: %s", verb, flat)
 		if movedToToday {
 			// Surfaces the bucket jump explicitly — from any other tab this
 			// otherwise looks like a plain activation, and the task silently
 			// vanishing from the current list (it moved to Today) would
 			// otherwise read as a bug rather than the intended behavior.
-			status = fmt.Sprintf("activated: %s (moved to Today)", flat)
+			status = fmt.Sprintf("%s: %s (moved to Today)", verb, flat)
 		}
-		return taskSavedMsg{status: status, focusID: t.ID, sha: sha}
+		saved := taskSavedMsg{status: status, sha: sha}
+		if focus {
+			saved.focusID = t.ID
+		}
+		return saved
 	}
 }
 
@@ -3448,14 +3471,21 @@ func (m *Model) helpLine() string {
 		if m.emailEnabled {
 			syncLabel = "full sync (git+email)"
 		}
+		// The "o" hint sits right after "a" rather than at the end:
+		// renderHelpBar drops hints from the right on narrow terminals.
+		hints := [][2]string{
+			{"d", "done"},
+			{"e", "edit"},
+			{"c", "create"},
+			{"r", "date"},
+			{"t", "tag"},
+			{"a", "active"},
+		}
+		if m.launchConfigured() {
+			hints = append(hints, [2]string{"o", "claude"})
+		}
 		if m.viewMode == viewTag {
-			return m.renderHelpBar(
-				[2]string{"d", "done"},
-				[2]string{"e", "edit"},
-				[2]string{"c", "create"},
-				[2]string{"r", "date"},
-				[2]string{"t", "tag"},
-				[2]string{"a", "active"},
+			hints = append(hints,
 				[2]string{"m", "grab"},
 				[2]string{"/", "search"},
 				[2]string{"v", "schedule"},
@@ -3468,14 +3498,9 @@ func (m *Model) helpLine() string {
 				[2]string{"h", "help"},
 				[2]string{"q", "quit"},
 			)
+			return m.renderHelpBar(hints...)
 		}
-		return m.renderHelpBar(
-			[2]string{"d", "done"},
-			[2]string{"e", "edit"},
-			[2]string{"c", "create"},
-			[2]string{"r", "date"},
-			[2]string{"t", "tag"},
-			[2]string{"a", "active"},
+		hints = append(hints,
 			[2]string{"m", "grab"},
 			[2]string{"/", "search"},
 			[2]string{"v", "tags"},
@@ -3490,6 +3515,7 @@ func (m *Model) helpLine() string {
 			[2]string{"h", "help"},
 			[2]string{"q", "quit"},
 		)
+		return m.renderHelpBar(hints...)
 	case modeSettings:
 		return m.styles.helpStyle.Render("↑↓ navigate  ←→ change  Enter save  Esc cancel")
 	case modeHelp:
@@ -3705,6 +3731,7 @@ func (m *Model) helpModalContent() string {
 		"  " + k("x") + "    delete\n" +
 		"  " + k("m") + "    grab / reorder\n" +
 		"  " + k("a") + "    toggle active\n" +
+		"  " + k("o") + "    open in Claude Code (and activate)\n" +
 		"  " + k("/") + "    search\n" +
 		"  " + k("v") + "    toggle view\n" +
 		"  " + k("↵") + "    notes panel\n" +

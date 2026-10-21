@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -1479,6 +1480,71 @@ func TestTUI_ActivateRebalancesTodayBucketCleanly(t *testing.T) {
 
 	if dirty := tasksStatus(t, m.repoPath); dirty != "" {
 		t.Errorf("rebalanced siblings left uncommitted, which permanently defers auto-push's rebase:\n%s", dirty)
+	}
+}
+
+// TestTUI_ActivateCmdVerbPrefixesStatus pins activateCmd's contract for both
+// callers: the verb prefixes the status, the "(moved to Today)" suffix appears
+// only when the bucket actually changed, a real commit SHA comes back so undo
+// and auto-push fire, and focus alone decides whether the reload jumps to it.
+func TestTUI_ActivateCmdVerbPrefixesStatus(t *testing.T) {
+	cases := []struct {
+		verb, id, wantStatus string
+		focus                bool
+	}{
+		{"launched", "01WEEK", "launched: week task (moved to Today)", true},
+		{"launched", "01TODAY", "launched: today task", true},
+		{"launched", "01WEEK", "launched: week task (moved to Today)", false},
+		{"activated", "01WEEK", "activated: week task (moved to Today)", true},
+		{"activated", "01TODAY", "activated: today task", true},
+	}
+	for _, tc := range cases {
+		t.Run(fmt.Sprintf("%s/%s/focus=%v", tc.verb, tc.id, tc.focus), func(t *testing.T) {
+			m := newTestModel(t,
+				model.Task{ID: "01TODAY", Title: "today task", Status: "open", Schedule: "today",
+					Position: 1000, UpdatedAt: "2026-04-13T00:00:00Z"},
+				model.Task{ID: "01WEEK", Title: "week task", Status: "open", Schedule: "week",
+					Position: 1000, UpdatedAt: "2026-04-13T00:00:00Z"},
+			)
+			task, err := m.store.GetByPrefix(tc.id)
+			if err != nil {
+				t.Fatalf("get: %v", err)
+			}
+			cmd := m.activateCmd(task, tc.verb, tc.focus)
+			if cmd == nil {
+				t.Fatal("activateCmd returned nil cmd")
+			}
+			saved, ok := cmd().(taskSavedMsg)
+			if !ok {
+				t.Fatalf("activateCmd msg is not a taskSavedMsg")
+			}
+			if saved.err != nil {
+				t.Fatalf("activateCmd error: %v", saved.err)
+			}
+			if saved.status != tc.wantStatus {
+				t.Errorf("status = %q, want %q", saved.status, tc.wantStatus)
+			}
+			if saved.sha == "" {
+				t.Error("sha is empty, want the activation commit's SHA")
+			}
+			wantFocus := ""
+			if tc.focus {
+				wantFocus = tc.id
+			}
+			if saved.focusID != wantFocus {
+				t.Errorf("focusID = %q, want %q", saved.focusID, wantFocus)
+			}
+			got, err := m.store.GetByPrefix(tc.id)
+			if err != nil {
+				t.Fatalf("get: %v", err)
+			}
+			if !got.IsActive() {
+				t.Error("task should be active on disk")
+			}
+			if want := expectSchedule(t, "today"); got.Schedule != want {
+				t.Errorf("Schedule = %q, want %q", got.Schedule, want)
+			}
+		})
 	}
 }
 
@@ -5940,6 +6006,11 @@ func newTestModelWithOpts(t *testing.T, opts Options, tasks ...model.Task) *Mode
 func TestMain(mn *testing.M) {
 	runAutoPush = func(string, time.Duration) (git.PushResult, error) {
 		return git.PushResult{Skipped: true}, nil
+	}
+	// An error, not nil: a test that forgets stubLaunch must never exec a
+	// real launcher, and must not silently look like a successful launch.
+	runLaunch = func(context.Context, []string, string) error {
+		return errors.New("runLaunch not stubbed in test")
 	}
 	os.Exit(mn.Run())
 }
