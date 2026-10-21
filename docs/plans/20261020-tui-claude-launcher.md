@@ -179,16 +179,16 @@
 - [x] run `go test ./internal/tui/` - must pass before task 7
 
 ### Task 7: Verify acceptance criteria
-- [ ] verify all requirements from Overview are implemented (key, tag → dir, prompt shape, launch-then-activate, TUI-only, off when unconfigured)
-- [ ] verify edge cases are handled (already active, done, deleted mid-flight, selection moved, missing dir, no shell interpretation of body)
-- [ ] run full test suite: `go test ./...`
-- [ ] run `go vet ./...` and `go build -o monolog`
-- [ ] verify every new exported function in `internal/launch` and the new config accessor has direct tests
+- [x] verify all requirements from Overview are implemented (key, tag → dir, prompt shape, launch-then-activate, TUI-only, off when unconfigured)
+- [x] verify edge cases are handled (already active, done, deleted mid-flight, selection moved, missing dir, no shell interpretation of body)
+- [x] run full test suite: `go test ./...`
+- [x] run `go vet ./...` and `go build -o monolog`
+- [x] verify every new exported function in `internal/launch` and the new config accessor has direct tests
 
 ### Task 8: [Final] Update documentation
-- [ ] README.md: add `o` row to the TUI keybinding table; add an "Open a task in Claude Code" section with the example `launch` block, the tag → dir resolution rule (tag order, `active`/`claude` skipped, `default_dir` fallback), the skill-filed-task workflow (no repo tag per SKILL.md → retag with `t`, or set `default_dir` to the parent of your repos), the fixed prompt, launch-then-activate behavior, and kitty setup (`allow_remote_control socket-only` + `listen_on unix:/tmp/kitty` in `kitty.conf` so `KITTY_LISTEN_ON` is exported and `kitty @` uses the socket rather than the tty, which would clash with Bubble Tea's alt-screen); note non-kitty examples are a config change only
-- [ ] CLAUDE.md: add `internal/launch/` to the Architecture list and a **Launch in Claude Code (TUI)** Key Design Decisions bullet (config block + `config.Launch()`, no-config-import rule, argv-not-shell, single-pass replacer, launch-then-activate-by-ID, already-active must not toggle, `runLaunch` seam, `activateCmd` shared with `a`)
-- [ ] move this plan to `docs/plans/completed/`
+- [x] README.md: add `o` row to the TUI keybinding table; add an "Open a task in Claude Code" section with the example `launch` block, the tag → dir resolution rule (tag order, `active`/`claude` skipped, `default_dir` fallback), the skill-filed-task workflow (no repo tag per SKILL.md → retag with `t`, or set `default_dir` to the parent of your repos), the fixed prompt, launch-then-activate behavior, and kitty setup (`allow_remote_control socket-only` + `listen_on unix:/tmp/kitty` in `kitty.conf` so `KITTY_LISTEN_ON` is exported and `kitty @` uses the socket rather than the tty, which would clash with Bubble Tea's alt-screen); note non-kitty examples are a config change only
+- [x] CLAUDE.md: add `internal/launch/` to the Architecture list and a **Launch in Claude Code (TUI)** Key Design Decisions bullet (config block + `config.Launch()`, no-config-import rule, argv-not-shell, single-pass replacer, launch-then-activate-by-ID, already-active must not toggle, `runLaunch` seam, `activateCmd` shared with `a`)
+- [x] move this plan to `docs/plans/completed/` (deferred to orchestrator after reviews)
 
 ## Post-Completion
 *Items requiring manual intervention or external systems - no checkboxes, informational only*
