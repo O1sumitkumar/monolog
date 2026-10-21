@@ -156,16 +156,16 @@
 - Modify: `internal/tui/model.go`
 - Create: `internal/tui/launch_test.go`
 
-- [ ] add `launchCfg config.LaunchConfig` to `Model`, snapshot in `newModel`, `launchConfigured()` helper, `launchTimeout = 5 * time.Second`, `var runLaunch = launch.Run`
-- [ ] add `launchSelected()` handling steps 1–4 (no task, not configured, resolve dir, `os.Stat`) and `launchCmd` returning `launchResultMsg{err, taskID, title}`; bind `"o"` in `updateNormal`
-- [ ] handle `launchResultMsg` in `Update`: failure status, re-find by ID via `m.store.Get` (`ErrNotFound` vs other errors), skip activation when gone/done/already active, otherwise `activateCmd(t, "launched")`; every message via `statusMsg`, never `m.err`
-- [ ] test setup: in the tui `TestMain`, default `runLaunch` to a stub returning an error (like `runAutoPush` is neutralized) so no test can ever exec kitty; most tests set `m.launchCfg` directly; one config-driven test writes the `launch` JSON before `config.Load` (mirror `newTestModelWithEmail`, `email_test.go:102`) to pin the `newModel` snapshot
-- [ ] write tests (fake `runLaunch` recording argv/dir; `t.Cleanup` restores it): inactive task in Week → launch called with resolved dir and prompt as one argv element containing full ULID/title/body → task active, moved to Today, one new commit, undo stack grew, status `launched: … (moved to Today)`
-- [ ] write tests: already-active task stays active and no new commit; failed launch → status `launch failed: …`, no commit, task unchanged; task deleted before result → no panic, status says not activated; `o` on a done task (Done tab) → launch called, not activated
-- [ ] write test for the selection race without `runCmd` (it follows the whole chain): `cmd := key(t, m, "o")`, `msg := cmd()`, move cursor with `j`, `m.Update(msg)`, then run the rest of the chain → the launched task (by ID) is activated, not the newly selected one
-- [ ] write test: `o` failing dir resolution, then a successful `o` → help line shows `launched: …` (no sticky error)
-- [ ] write tests: unconfigured → status `launch not configured` and `runLaunch` never called; no matching tag and no default → error status, not called; mapped dir missing on disk → `launch dir not found`, not called; detail panel open → `o` goes to the note textarea, not called
-- [ ] run `go test ./internal/tui/` - must pass before task 6
+- [x] add `launchCfg config.LaunchConfig` to `Model`, snapshot in `newModel`, `launchConfigured()` helper, `launchTimeout = 5 * time.Second`, `var runLaunch = launch.Run`
+- [x] add `launchSelected()` handling steps 1–4 (no task, not configured, resolve dir, `os.Stat`) and `launchCmd` returning `launchResultMsg{err, taskID, title}`; bind `"o"` in `updateNormal`
+- [x] handle `launchResultMsg` in `Update`: failure status, re-find by ID via `m.store.Get` (`ErrNotFound` vs other errors), skip activation when gone/done/already active, otherwise `activateCmd(t, "launched")`; every message via `statusMsg`, never `m.err`
+- [x] test setup: in the tui `TestMain`, default `runLaunch` to a stub returning an error (like `runAutoPush` is neutralized) so no test can ever exec kitty; most tests set `m.launchCfg` directly; one config-driven test writes the `launch` JSON before `config.Load` (mirror `newTestModelWithEmail`, `email_test.go:102`) to pin the `newModel` snapshot
+- [x] write tests (fake `runLaunch` recording argv/dir; `t.Cleanup` restores it): inactive task in Week → launch called with resolved dir and prompt as one argv element containing full ULID/title/body → task active, moved to Today, one new commit, undo stack grew, status `launched: … (moved to Today)`
+- [x] write tests: already-active task stays active and no new commit; failed launch → status `launch failed: …`, no commit, task unchanged; task deleted before result → no panic, status says not activated; `o` on a done task (Done tab) → launch called, not activated
+- [x] write test for the selection race without `runCmd` (it follows the whole chain): `cmd := key(t, m, "o")`, `msg := cmd()`, move cursor with `j`, `m.Update(msg)`, then run the rest of the chain → the launched task (by ID) is activated, not the newly selected one
+- [x] write test: `o` failing dir resolution, then a successful `o` → help line shows `launched: …` (no sticky error)
+- [x] write tests: unconfigured → status `launch not configured` and `runLaunch` never called; no matching tag and no default → error status, not called; mapped dir missing on disk → `launch dir not found`, not called; detail panel open → `o` goes to the note textarea, not called
+- [x] run `go test ./internal/tui/` - must pass before task 6
 
 ### Task 6: Help bar hint and help overlay
 

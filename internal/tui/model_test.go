@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -5999,6 +6000,11 @@ func newTestModelWithOpts(t *testing.T, opts Options, tasks ...model.Task) *Mode
 func TestMain(mn *testing.M) {
 	runAutoPush = func(string, time.Duration) (git.PushResult, error) {
 		return git.PushResult{Skipped: true}, nil
+	}
+	// An error, not nil: a test that forgets stubLaunch must never exec a
+	// real launcher, and must not silently look like a successful launch.
+	runLaunch = func(context.Context, []string, string) error {
+		return errors.New("runLaunch not stubbed in test")
 	}
 	os.Exit(mn.Run())
 }
