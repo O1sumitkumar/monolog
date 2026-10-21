@@ -1390,36 +1390,6 @@ func TestLoadResetsLaunchBlockBetweenCalls(t *testing.T) {
 	}
 }
 
-func TestLaunchReturnsDefensiveCopy(t *testing.T) {
-	resetLaunchCfg(t)
-	resetDateFormat(t)
-	tmpDir := t.TempDir()
-	writeConfigDoc(t, tmpDir, map[string]any{
-		"launch": map[string]any{
-			"command": []string{"kitty", "{prompt}"},
-			"dirs":    map[string]string{"monolog": "/a"},
-		},
-	})
-	if err := Load(tmpDir); err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	first := Launch()
-	first.Command[0] = "mutated"
-	first.Dirs["monolog"] = "/mutated"
-	first.Dirs["extra"] = "/x"
-
-	second := Launch()
-	if second.Command[0] != "kitty" {
-		t.Errorf("Command[0] = %q after caller mutation, want %q", second.Command[0], "kitty")
-	}
-	if second.Dirs["monolog"] != "/a" {
-		t.Errorf(`Dirs["monolog"] = %q after caller mutation, want "/a"`, second.Dirs["monolog"])
-	}
-	if _, ok := second.Dirs["extra"]; ok {
-		t.Errorf("Dirs gained a key added by the caller")
-	}
-}
-
 func TestLoadMalformedLaunchBlockIsolated(t *testing.T) {
 	// A wrongly-typed launch block (command as a string) must disable only
 	// launch — every other setting in the same file still loads.

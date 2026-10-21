@@ -10,8 +10,10 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
+	"time"
+
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/maksmas/monolog/internal/config"
 	"github.com/maksmas/monolog/internal/git"
@@ -26,21 +28,25 @@ const (
 	launchIDB = "01JBBBBBBBBBBBBBBBBBBBBBBB"
 )
 
-// launchRecorder records calls made through the runLaunch seam.
+// launchRecorder records calls made through the runLaunch seam. Cmds run on
+// the test goroutine, so it needs no locking.
 type launchRecorder struct {
-	mu    sync.Mutex
-	calls int
-	argvs [][]string
-	dirs  []string
-	err   error
+	calls     int
+	argvs     [][]string
+	dirs      []string
+	deadlines []time.Duration // time left on ctx at call time; -1 if none
+	err       error
 }
 
-func (r *launchRecorder) record(_ context.Context, argv []string, dir string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+func (r *launchRecorder) record(ctx context.Context, argv []string, dir string) error {
 	r.calls++
 	r.argvs = append(r.argvs, argv)
 	r.dirs = append(r.dirs, dir)
+	left := time.Duration(-1)
+	if dl, ok := ctx.Deadline(); ok {
+		left = time.Until(dl)
+	}
+	r.deadlines = append(r.deadlines, left)
 	return r.err
 }
 
@@ -107,6 +113,9 @@ func TestLaunch_ActivatesInactiveTaskAndMovesToToday(t *testing.T) {
 	}
 	if rec.dirs[0] != dir {
 		t.Errorf("dir = %q, want %q", rec.dirs[0], dir)
+	}
+	if left := rec.deadlines[0]; left <= 0 || left > launchTimeout {
+		t.Errorf("launcher ctx time left = %v, want a deadline within %v", left, launchTimeout)
 	}
 	prompt := launch.BuildPrompt(launchIDA, "fix the thing", body)
 	wantArgv := []string{"launcher", "--cwd=" + dir, prompt}
@@ -291,6 +300,149 @@ func TestLaunch_ActivatesLaunchedTaskNotNewSelection(t *testing.T) {
 	if mustGet(t, m, launchIDB).IsActive() {
 		t.Error("newly selected task must not be activated")
 	}
+	if sel := m.selectedTask(); sel == nil || sel.ID != launchIDB {
+		t.Errorf("selection after activation = %v, want it left on %s", sel, launchIDB)
+	}
+}
+
+// A launch that lands after the user switched tabs activates the task (and
+// moves it to Today) without dragging the view back to Today.
+func TestLaunch_DoesNotYankTabWhenSelectionMoved(t *testing.T) {
+	stubLaunch(t, nil)
+	dir := t.TempDir()
+	m := newTestModel(t,
+		model.Task{ID: launchIDA, Title: "weekly", Status: "open", Schedule: "week",
+			Position: 1000, Tags: []string{"proj"}, UpdatedAt: "2026-04-13T00:00:00Z"},
+		model.Task{ID: launchIDB, Title: "monthly", Status: "open", Schedule: "month",
+			Position: 1000, Tags: []string{"proj"}, UpdatedAt: "2026-04-13T00:00:00Z"},
+	)
+	m.launchCfg = testLaunchCfg(dir)
+	m, _ = key(t, m, "3") // Week
+	m, cmd := key(t, m, "o")
+	msg := cmd()
+	m, _ = key(t, m, "4") // Month
+	tab := m.activeTab
+
+	next, out := m.Update(msg)
+	m = next.(*Model)
+	if out == nil {
+		t.Fatal("successful launch should return the activation cmd")
+	}
+	m = drive(t, m, out)
+
+	if !mustGet(t, m, launchIDA).IsActive() {
+		t.Error("launched task should be active")
+	}
+	if m.activeTab != tab {
+		t.Errorf("activeTab = %d, want %d (no jump to Today)", m.activeTab, tab)
+	}
+	if sel := m.selectedTask(); sel == nil || sel.ID != launchIDB {
+		t.Errorf("selection = %v, want %s", sel, launchIDB)
+	}
+	if want := "launched: weekly (moved to Today)"; m.statusMsg != want {
+		t.Errorf("status = %q, want %q", m.statusMsg, want)
+	}
+}
+
+func TestLaunch_UnreadableTaskReportsNotActivated(t *testing.T) {
+	stubLaunch(t, nil)
+	dir := t.TempDir()
+	m := newTestModel(t,
+		model.Task{ID: launchIDA, Title: "corrupt", Status: "open", Schedule: "today",
+			Position: 1000, Tags: []string{"proj"}, UpdatedAt: "2026-04-13T00:00:00Z"},
+	)
+	m.launchCfg = testLaunchCfg(dir)
+	before := commitCount(t, m.repoPath)
+
+	m, cmd := key(t, m, "o")
+	msg := cmd()
+	if err := os.WriteFile(filepath.Join(m.repoPath, taskRelPath(launchIDA)), []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	next, out := m.Update(msg)
+	m = next.(*Model)
+
+	if out != nil {
+		t.Error("unreadable task should produce no follow-up cmd")
+	}
+	if prefix := "launched: corrupt (not activated: "; !strings.HasPrefix(m.statusMsg, prefix) {
+		t.Errorf("status = %q, want prefix %q", m.statusMsg, prefix)
+	}
+	if after := commitCount(t, m.repoPath); after != before {
+		t.Errorf("commits = %d, want %d", after, before)
+	}
+}
+
+func TestLaunch_MultiLineTitleFlattenedInStatus(t *testing.T) {
+	rec := stubLaunch(t, nil)
+	dir := t.TempDir()
+	m := newTestModel(t,
+		model.Task{ID: launchIDA, Title: "first line\nsecond line", Status: "open", Schedule: "today",
+			Position: 1000, Tags: []string{"proj"}, UpdatedAt: "2026-04-13T00:00:00Z"},
+	)
+	m.launchCfg = testLaunchCfg(dir)
+
+	m, cmd := key(t, m, "o")
+	m = runCmd(t, m, cmd)
+
+	if want := "launched: " + flattenTitle("first line\nsecond line"); m.statusMsg != want {
+		t.Errorf("status = %q, want %q", m.statusMsg, want)
+	}
+	if strings.Contains(m.statusMsg, "\n") {
+		t.Errorf("status %q should be single-line", m.statusMsg)
+	}
+	if !strings.Contains(rec.argvs[0][2], "first line\nsecond line") {
+		t.Errorf("prompt should keep the raw title: %q", rec.argvs[0][2])
+	}
+}
+
+// Two `o` presses before either launcher returns open two tabs; the task
+// ends up active once, with no error and at most one commit per activation.
+func TestLaunch_DoublePress(t *testing.T) {
+	rec := stubLaunch(t, nil)
+	dir := t.TempDir()
+	m := newTestModel(t,
+		model.Task{ID: launchIDA, Title: "twice", Status: "open", Schedule: "today",
+			Position: 1000, Tags: []string{"proj"}, UpdatedAt: "2026-04-13T00:00:00Z"},
+	)
+	m.launchCfg = testLaunchCfg(dir)
+	before := commitCount(t, m.repoPath)
+
+	m, first := key(t, m, "o")
+	m, second := key(t, m, "o")
+	m = runCmd(t, m, first)
+	m = runCmd(t, m, second)
+
+	if rec.calls != 2 {
+		t.Errorf("runLaunch calls = %d, want 2", rec.calls)
+	}
+	if !mustGet(t, m, launchIDA).IsActive() {
+		t.Error("task should be active")
+	}
+	if m.err != nil {
+		t.Errorf("m.err = %v, want nil", m.err)
+	}
+	if after := commitCount(t, m.repoPath); after < before+1 || after > before+2 {
+		t.Errorf("commits = %d, want %d..%d", after, before+1, before+2)
+	}
+}
+
+// A stale m.err from an earlier action renders ahead of statusMsg, so every
+// launch outcome must clear it or its status is never seen.
+func TestLaunch_ClearsStaleError(t *testing.T) {
+	stubLaunch(t, nil)
+	m := newTestModel(t,
+		model.Task{ID: launchIDA, Title: "task", Status: "open", Schedule: "today",
+			Position: 1000, Tags: []string{"proj"}, UpdatedAt: "2026-04-13T00:00:00Z"},
+	)
+	m.width = 200
+	m.err = errors.New("old reschedule error")
+
+	m, _ = key(t, m, "o")
+
+	if line := m.helpLine(); !strings.Contains(line, "launch not configured") {
+		t.Errorf("help line = %q, want the launch status", line)
+	}
 }
 
 func TestLaunch_ResolveFailureThenSuccessIsNotSticky(t *testing.T) {
@@ -299,8 +451,10 @@ func TestLaunch_ResolveFailureThenSuccessIsNotSticky(t *testing.T) {
 	m := newTestModel(t,
 		model.Task{ID: launchIDA, Title: "nowhere", Status: "open", Schedule: "today",
 			Position: 1000, Tags: []string{"unmapped"}, UpdatedAt: "2026-04-13T00:00:00Z"},
+		// Already active, so the launch sets only statusMsg: an activation's
+		// taskSavedMsg would clear m.err and hide a regression here.
 		model.Task{ID: launchIDB, Title: "somewhere", Status: "open", Schedule: "today",
-			Position: 2000, Tags: []string{"proj"}, UpdatedAt: "2026-04-13T00:00:00Z"},
+			Position: 2000, Tags: []string{"active", "proj"}, UpdatedAt: "2026-04-13T00:00:00Z"},
 	)
 	m.launchCfg = testLaunchCfg(dir)
 	m.width = 200
@@ -314,6 +468,9 @@ func TestLaunch_ResolveFailureThenSuccessIsNotSticky(t *testing.T) {
 	}
 
 	m, _ = key(t, m, "j")
+	if sel := m.selectedTask(); sel == nil || sel.ID != launchIDB {
+		t.Fatalf("selection after j = %v, want %s", sel, launchIDB)
+	}
 	m, cmd = key(t, m, "o")
 	m = runCmd(t, m, cmd)
 
@@ -405,6 +562,9 @@ func TestLaunch_DetailPanelRoutesOToNoteTextarea(t *testing.T) {
 // Pins the newModel snapshot: a launch block in config.json reaches
 // m.launchCfg through config.Load + newModel, not through Options.
 func TestNewModel_SnapshotsLaunchConfig(t *testing.T) {
+	// Reset config package state so the kitty launch block does not leak.
+	cleanDir := t.TempDir()
+	t.Cleanup(func() { _ = config.Load(cleanDir) })
 	repoPath := filepath.Join(t.TempDir(), "repo")
 	if err := git.Init(repoPath, ""); err != nil {
 		t.Fatalf("git.Init: %v", err)
@@ -475,8 +635,14 @@ func TestHelpLine_ClaudeHintOnlyWhenLaunchConfigured(t *testing.T) {
 			if !strings.Contains(h, "claude") {
 				t.Errorf("configured help line missing claude hint: %q", h)
 			}
-			if a, o := strings.Index(h, "active"), strings.Index(h, "claude"); a < 0 || o < a {
-				t.Errorf("claude hint should follow the active hint: %q", h)
+			if !strings.Contains(ansi.Strip(h), "a active  o claude") {
+				t.Errorf("claude hint should sit right after the active hint: %q", ansi.Strip(h))
+			}
+
+			// Narrow terminals drop hints from the right; o must survive.
+			m.width = 100
+			if h := ansi.Strip(m.helpLine()); !strings.Contains(h, "a active  o claude") {
+				t.Errorf("claude hint dropped at width 100: %q", h)
 			}
 		})
 	}

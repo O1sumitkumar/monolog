@@ -1653,13 +1653,15 @@ func (m *Model) launchConfigured() bool {
 }
 
 // launchSelected opens the selected task in Claude Code via the configured
-// launcher. Every outcome is reported through statusMsg, never m.err: a
-// sticky error would hide every later "launched:" status.
+// launcher. Every outcome is reported through statusMsg, never m.err, and
+// clears any earlier m.err: helpLine renders m.err ahead of statusMsg, so a
+// sticky error would hide every launch status.
 func (m *Model) launchSelected() tea.Cmd {
 	task := m.selectedTask()
 	if task == nil {
 		return nil
 	}
+	m.err = nil
 	if !m.launchConfigured() {
 		m.statusMsg = "launch not configured"
 		return nil
@@ -1691,6 +1693,7 @@ func launchCmd(argv []string, dir, taskID, title string) tea.Cmd {
 // have changed while the launcher ran. A done or already-active task is left
 // alone — toggling an active one would deactivate it.
 func (m *Model) handleLaunchResult(msg launchResultMsg) tea.Cmd {
+	m.err = nil
 	if msg.err != nil {
 		m.statusMsg = "launch failed: " + msg.err.Error()
 		return nil
@@ -1704,7 +1707,20 @@ func (m *Model) handleLaunchResult(msg launchResultMsg) tea.Cmd {
 	case t.Status == "done" || t.IsActive():
 		m.statusMsg = "launched: " + msg.title
 	default:
-		return m.activateCmd(t, "launched")
+		cmd := m.activateCmd(t, "launched")
+		if sel := m.selectedTask(); sel != nil && sel.ID == msg.taskID {
+			return cmd
+		}
+		// The user moved on while the launcher ran: activate without the
+		// focus jump `a` does, so the cursor is not yanked back to Today.
+		return func() tea.Msg {
+			out := cmd()
+			if saved, ok := out.(taskSavedMsg); ok {
+				saved.focusID = ""
+				return saved
+			}
+			return out
+		}
 	}
 	return nil
 }

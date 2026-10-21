@@ -125,43 +125,17 @@ var telegramCfg = defaultTelegramConfig()
 // package — internal/launch/ MUST NOT import internal/config so it stays as
 // testable as schedule/display/model.
 type LaunchConfig struct {
-	Command    []string
-	Dirs       map[string]string
-	DefaultDir string
-}
-
-// launchCfg holds the in-session launch config populated by Load.
-var launchCfg LaunchConfig
-
-// launchBlock mirrors the on-disk JSON shape for the optional "launch"
-// block. It has no defaults to apply, so plain (non-pointer) fields suffice.
-type launchBlock struct {
 	Command    []string          `json:"command"`
 	Dirs       map[string]string `json:"dirs"`
 	DefaultDir string            `json:"default_dir"`
 }
 
-// resetLaunchCfgToDefaults clears launchCfg. Called by Load before applying
-// any "launch" block from disk so a previously-loaded value is not preserved
-// across configurations.
-func resetLaunchCfgToDefaults() {
-	launchCfg = LaunchConfig{}
-}
+// launchCfg holds the in-session launch config populated by Load.
+var launchCfg LaunchConfig
 
-// Launch returns the current launch settings. The Command slice and Dirs map
-// are copies, so callers cannot mutate package state through them.
+// Launch returns the current launch settings.
 func Launch() LaunchConfig {
-	out := LaunchConfig{DefaultDir: launchCfg.DefaultDir}
-	if launchCfg.Command != nil {
-		out.Command = append([]string(nil), launchCfg.Command...)
-	}
-	if launchCfg.Dirs != nil {
-		out.Dirs = make(map[string]string, len(launchCfg.Dirs))
-		for k, v := range launchCfg.Dirs {
-			out.Dirs[k] = v
-		}
-	}
-	return out
+	return launchCfg
 }
 
 // autoPush holds the in-session auto-push setting populated by Load. The
@@ -397,7 +371,7 @@ func applyTelegramBlock(b telegramBlock) {
 func Load(monologDir string) error {
 	resetEmailCfgToDefaults()
 	resetTelegramCfgToDefaults()
-	resetLaunchCfgToDefaults()
+	launchCfg = LaunchConfig{}
 	autoPush = true
 
 	data, err := os.ReadFile(configPath(monologDir))
@@ -415,9 +389,10 @@ func Load(monologDir string) error {
 		// true default while an explicit "auto_push": false disables the
 		// feature. A plain bool would make a missing key mean false.
 		AutoPush *bool `json:"auto_push,omitempty"`
-		// Launch is decoded separately so a hand-typed mistake in it (it has
-		// no writer command) cannot reset every other setting — config.json
-		// is synced, so that would disable telegram on the bot host.
+		// Launch is decoded separately so a wrong-shape block (it has no
+		// writer command, so it is hand-typed) cannot reset every other
+		// setting — config.json is synced, so that would disable telegram on
+		// the bot host. A JSON syntax error anywhere still resets everything.
 		Launch json.RawMessage `json:"launch,omitempty"`
 	}
 	if err := json.Unmarshal(data, &cfg); err != nil {
@@ -438,9 +413,10 @@ func Load(monologDir string) error {
 		autoPush = *cfg.AutoPush
 	}
 	if len(cfg.Launch) > 0 {
-		var lb launchBlock
-		if err := json.Unmarshal(cfg.Launch, &lb); err == nil {
-			launchCfg = LaunchConfig(lb)
+		// Decode into a local: Unmarshal fills fields before a type error.
+		var lc LaunchConfig
+		if err := json.Unmarshal(cfg.Launch, &lc); err == nil {
+			launchCfg = lc
 		}
 	}
 	return nil

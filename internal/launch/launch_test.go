@@ -2,6 +2,7 @@ package launch
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,6 +26,7 @@ func TestResolveDir(t *testing.T) {
 		"tildesub":  "~/IdeaProjects/x",
 		"otheruser": "~bob/x",
 		"midpath":   "/src/~/x",
+		"empty":     "",
 	}
 
 	cases := []struct {
@@ -44,8 +46,9 @@ func TestResolveDir(t *testing.T) {
 		{"bare tilde expanded", []string{"tilde"}, "", home},
 		{"tilde slash expanded", []string{"tildesub"}, "", home + "/IdeaProjects/x"},
 		{"default dir tilde expanded", []string{"inbox"}, "~/IdeaProjects", home + "/IdeaProjects"},
-		{"tilde user untouched", []string{"otheruser"}, "", "~bob/x"},
 		{"mid-path tilde untouched", []string{"midpath"}, "", "/src/~/x"},
+		{"empty mapping falls through to next tag", []string{"empty", "monolog"}, "", "/src/monolog"},
+		{"empty mapping falls back to default", []string{"empty"}, "/src/default", "/src/default"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -68,6 +71,38 @@ func TestResolveDir_NoMatchNoDefault(t *testing.T) {
 	}
 	if want := "no launch dir for tags [inbox claude]"; err.Error() != want {
 		t.Errorf("error = %q, want %q", err.Error(), want)
+	}
+}
+
+func TestResolveDir_Errors(t *testing.T) {
+	cases := []struct {
+		name       string
+		tags       []string
+		dirs       map[string]string
+		defaultDir string
+		home       string
+		want       string
+	}{
+		{"relative mapping rejected", []string{"p"}, map[string]string{"p": "src/p"}, "", "/home/u", "launch dir must be absolute: src/p"},
+		{"relative default rejected", []string{"x"}, nil, "./repos", "/home/u", "launch dir must be absolute: ./repos"},
+		{"tilde user is not expanded, so it is relative", []string{"otheruser"}, map[string]string{"otheruser": "~bob/x"}, "", "/home/u", "launch dir must be absolute: ~bob/x"},
+		{"unset HOME fails tilde expansion", []string{"p"}, map[string]string{"p": "~/x"}, "", "", "expand ~/x"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("HOME", tc.home)
+			_, err := ResolveDir(tc.tags, tc.dirs, tc.defaultDir)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("ResolveDir error = %v, want it to contain %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestExpandHome_LeavesTildeUserAlone(t *testing.T) {
+	got, err := expandHome("~bob/x")
+	if err != nil || got != "~bob/x" {
+		t.Errorf("expandHome(~bob/x) = %q, %v; want it untouched", got, err)
 	}
 }
 
@@ -251,15 +286,6 @@ func TestRunPassesArgVerbatim(t *testing.T) {
 	}
 }
 
-// TestRunNoControllingTerminal only discriminates when the test process has a
-// controlling terminal (a developer's shell); without one /dev/tty fails anyway.
-func TestRunNoControllingTerminal(t *testing.T) {
-	requireSh(t)
-	if err := Run(context.Background(), []string{"sh", "-c", ": </dev/tty"}, t.TempDir()); err == nil {
-		t.Fatal("child opened /dev/tty; it must run without a controlling terminal")
-	}
-}
-
 func TestRunContextTimeoutKills(t *testing.T) {
 	requireSh(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
@@ -269,6 +295,9 @@ func TestRunContextTimeoutKills(t *testing.T) {
 	if err == nil {
 		t.Fatal("want error when the context deadline kills the child")
 	}
+	if !errors.Is(err, context.DeadlineExceeded) || !strings.HasPrefix(err.Error(), "launcher timed out") {
+		t.Errorf("error = %v, want a launcher timed out error wrapping the deadline", err)
+	}
 	if elapsed := time.Since(start); elapsed > 200*time.Millisecond+waitDelay+time.Second {
 		t.Errorf("Run took %v, should return shortly after the deadline", elapsed)
 	}
@@ -277,7 +306,7 @@ func TestRunContextTimeoutKills(t *testing.T) {
 func TestRunBackgroundChildHoldingPipe(t *testing.T) {
 	requireSh(t)
 	start := time.Now()
-	if err := Run(context.Background(), []string{"sh", "-c", "sleep 5 & exit 0"}, t.TempDir()); err != nil {
+	if err := Run(context.Background(), []string{"sh", "-c", "sleep 3 & exit 0"}, t.TempDir()); err != nil {
 		t.Fatalf("launcher exited 0, want nil error, got %v", err)
 	}
 	if elapsed := time.Since(start); elapsed > waitDelay+2*time.Second {

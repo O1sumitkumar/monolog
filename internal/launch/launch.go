@@ -14,7 +14,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/maksmas/monolog/internal/model"
@@ -28,20 +27,34 @@ const provenanceTag = "claude"
 // task's own order and the first one present in dirs wins; the reserved
 // active tag and the claude provenance tag are skipped even when mapped. With
 // no match it falls back to defaultDir, and errors when that is empty too. A
-// leading ~ in the result is expanded to the user's home directory.
+// leading ~ in the result is expanded to the user's home directory; anything
+// still relative after that is rejected, since the TUI's own working directory
+// is arbitrary and config.json is synced across devices.
 func ResolveDir(tags []string, dirs map[string]string, defaultDir string) (string, error) {
 	for _, tag := range tags {
 		if tag == model.ActiveTag || tag == provenanceTag {
 			continue
 		}
 		if dir, ok := dirs[tag]; ok && dir != "" {
-			return expandHome(dir)
+			return absDir(dir)
 		}
 	}
 	if defaultDir != "" {
-		return expandHome(defaultDir)
+		return absDir(defaultDir)
 	}
 	return "", fmt.Errorf("no launch dir for tags %v", tags)
+}
+
+// absDir expands a leading ~ and requires the result to be absolute.
+func absDir(path string) (string, error) {
+	dir, err := expandHome(path)
+	if err != nil {
+		return "", err
+	}
+	if !filepath.IsAbs(dir) {
+		return "", fmt.Errorf("launch dir must be absolute: %s", path)
+	}
+	return dir, nil
 }
 
 // expandHome replaces a leading "~" or "~/" with the home directory. "~user"
@@ -85,23 +98,27 @@ func BuildArgv(command []string, dir, prompt string) []string {
 const waitDelay = time.Second
 
 // Run executes argv in dir and returns once the launcher exits. The child gets
-// no stdin and runs in a new session (Setsid), so it has no controlling
-// terminal: a launcher that falls back to /dev/tty (kitty @ without
-// KITTY_LISTEN_ON does) fails cleanly instead of racing Bubble Tea's raw-mode
-// reader for the tty. A failure carries the first line of the child's output.
+// no stdin and, on unix, runs in a new session (Setsid), so it has no
+// controlling terminal: a launcher that falls back to /dev/tty (kitty @
+// without KITTY_LISTEN_ON does) fails cleanly instead of racing Bubble Tea's
+// raw-mode reader for the tty. A failure carries the first non-blank line of
+// the child's output; a ctx deadline is reported as a timeout.
 func Run(ctx context.Context, argv []string, dir string) error {
 	if len(argv) == 0 {
 		return errors.New("empty launch command")
 	}
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Dir = dir
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	detach(cmd)
 	cmd.WaitDelay = waitDelay
 	out, err := cmd.CombinedOutput()
 	// A launcher that exits 0 while a grandchild still holds the inherited
 	// pipe trips WaitDelay; that is a success, as in git.waitDelayAfterSuccess.
 	if err == nil || (errors.Is(err, exec.ErrWaitDelay) && cmd.ProcessState != nil && cmd.ProcessState.Success()) {
 		return nil
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return fmt.Errorf("launcher timed out: %w", ctxErr)
 	}
 	if line := firstLine(string(out)); line != "" {
 		return fmt.Errorf("%w: %s", err, line)
