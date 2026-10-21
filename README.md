@@ -1,8 +1,17 @@
 # Monolog
 
+[![CI](https://github.com/maksmas/monolog/actions/workflows/ci.yml/badge.svg)](https://github.com/maksmas/monolog/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/maksmas/monolog)](https://github.com/maksmas/monolog/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 A keyboard-driven personal backlog that lives in a git repo you own — no cloud, no account, plain-text data.
 
-<!-- Hero demo generated via `make demo` (vhs docs/demo.tape); the GIF lands during the first release. -->
+```bash
+brew install maksmas/tap/monolog   # macOS
+go install github.com/maksmas/monolog@latest   # anywhere with Go
+```
+
+<!-- Hero demo generated via `make demo` (vhs docs/demo.tape). -->
 ![monolog TUI demo](docs/img/demo.gif)
 
 ## Why monolog
