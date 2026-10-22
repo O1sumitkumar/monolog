@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -22,6 +23,7 @@ func newLsCmd() *cobra.Command {
 		done         bool
 		active       bool
 		full         bool
+		jsonOutput   bool
 	)
 
 	cmd := &cobra.Command{
@@ -86,6 +88,15 @@ func newLsCmd() *cobra.Command {
 				tasks = filterActive(tasks)
 			}
 
+			if jsonOutput {
+				enc := json.NewEncoder(cmd.OutOrStdout())
+				enc.SetIndent("", "  ")
+				if tasks == nil {
+					tasks = []model.Task{}
+				}
+				return enc.Encode(tasks)
+			}
+
 			if full {
 				return withPager(cmd.OutOrStdout(), func(w io.Writer) error {
 					display.FormatTasksFull(w, tasks, now, config.DateFormat())
@@ -103,6 +114,7 @@ func newLsCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&tag, "tag", "t", "", "Filter by tag")
 	cmd.Flags().BoolVarP(&done, "done", "d", false, "Show completed tasks")
 	cmd.Flags().BoolVar(&active, "active", false, "Show only active tasks (lifts default today filter unless --schedule is explicit)")
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Output tasks as a JSON array")
 
 	return cmd
 }

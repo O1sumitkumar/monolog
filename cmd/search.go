@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -19,8 +20,9 @@ const defaultSearchLimit = 10
 
 func newSearchCmd() *cobra.Command {
 	var (
-		limit int
-		done  bool
+		limit      int
+		done       bool
+		jsonOutput bool
 	)
 
 	cmd := &cobra.Command{
@@ -79,6 +81,15 @@ func newSearchCmd() *cobra.Command {
 				matches[i] = r.Task
 			}
 
+			if jsonOutput {
+				enc := json.NewEncoder(cmd.OutOrStdout())
+				enc.SetIndent("", "  ")
+				if matches == nil {
+					matches = []model.Task{}
+				}
+				return enc.Encode(matches)
+			}
+
 			display.FormatSearchResults(cmd.OutOrStdout(), matches, config.DateFormat())
 			return nil
 		},
@@ -89,6 +100,7 @@ func newSearchCmd() *cobra.Command {
 	// The letter is shared deliberately; -a is not, since `ls -a` means "all
 	// schedules, still open" and reusing it here would invert its meaning.
 	cmd.Flags().BoolVarP(&done, "done", "d", false, "Include completed tasks in the search")
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Output results as a JSON array")
 
 	return cmd
 }
