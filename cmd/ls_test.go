@@ -689,3 +689,56 @@ func TestFilterActive(t *testing.T) {
 		})
 	}
 }
+
+
+func TestLsCommand_JsonFlag(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "monolog")
+	initTestRepo(t, dir)
+
+	addTask(t, "Task 1", "-t", "backend")
+	addTask(t, "Task 2", "-t", "frontend", "-s", "tomorrow")
+
+	rootCmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetErr(buf)
+	rootCmd.SetArgs([]string{"ls", "--json", "-a"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("ls --json failed: %v", err)
+	}
+
+	var tasks []model.Task
+	if err := json.Unmarshal(buf.Bytes(), &tasks); err != nil {
+		t.Fatalf("invalid json: %v, output:\n%s", err, buf.String())
+	}
+	if len(tasks) != 2 {
+		t.Fatalf("expected 2 tasks, got %d", len(tasks))
+	}
+	if tasks[0].Title != "Task 1" || tasks[1].Title != "Task 2" {
+		t.Errorf("unexpected tasks in json: %+v", tasks)
+	}
+}
+
+func TestLsCommand_JsonFlag_Empty(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "monolog")
+	initTestRepo(t, dir)
+
+	rootCmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetErr(buf)
+	rootCmd.SetArgs([]string{"ls", "--json"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("ls --json failed: %v", err)
+	}
+
+	var tasks []model.Task
+	if err := json.Unmarshal(buf.Bytes(), &tasks); err != nil {
+		t.Fatalf("invalid json: %v, output:\n%s", err, buf.String())
+	}
+	if len(tasks) != 0 {
+		t.Fatalf("expected 0 tasks, got %d", len(tasks))
+	}
+}

@@ -115,6 +115,7 @@ Lists today's open tasks by default. Each row includes a compact dates column: r
 | `-d, --done` | Show completed tasks |
 | `--active` | Show only active tasks (lifts the default today filter unless `--schedule` is also given) |
 | `-f, --full` | Show each task as a multi-line detail block (title + metadata + body), piped through `$PAGER` when stdout is a TTY |
+| `--json` | Output tasks as a JSON array |
 
 ### `monolog search <query>`
 
@@ -133,6 +134,7 @@ Words are matched as case-insensitive substrings, so `week` finds "weekly" but `
 |------|-------------|
 | `-n, --limit` | Maximum matches to print (default 10; any value below 1 falls back to 10) |
 | `-d, --done` | Include completed tasks (default is open tasks only) |
+| `--json` | Output results as a JSON array |
 
 Rows are `<status> <12-char ID> <title> <schedule> <tags>`, where the status cell is `x` for done and `*` for active. The ID column is wider than the 8 characters `monolog ls` shows, because ULIDs created in the same ~256 ms window share an 8-character prefix and search output is meant to be pasted straight into `monolog note <id>`. Titles are padded to the widest match, capped at 60 columns so one long title doesn't widen every row. No match prints `No matches.`, and a blank query is an error rather than a dump of arbitrary tasks.
 

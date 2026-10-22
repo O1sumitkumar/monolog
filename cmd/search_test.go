@@ -683,3 +683,58 @@ func TestSearchCommand_DoneRankingMatchesSharedIndex(t *testing.T) {
 		}
 	}
 }
+
+
+func TestSearchCommand_JsonFlag(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "monolog")
+	initTestRepo(t, dir)
+
+	addTask(t, "Fix login authentication bug")
+	addTask(t, "Write documentation for CLI")
+
+	rootCmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetErr(buf)
+	rootCmd.SetArgs([]string{"search", "--json", "login"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("search --json failed: %v", err)
+	}
+
+	var matches []model.Task
+	if err := json.Unmarshal(buf.Bytes(), &matches); err != nil {
+		t.Fatalf("invalid json: %v, output:\n%s", err, buf.String())
+	}
+	if len(matches) != 1 {
+		t.Fatalf("expected 1 match, got %d", len(matches))
+	}
+	if matches[0].Title != "Fix login authentication bug" {
+		t.Errorf("unexpected task title: %s", matches[0].Title)
+	}
+}
+
+func TestSearchCommand_JsonFlag_NoMatches(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "monolog")
+	initTestRepo(t, dir)
+
+	addTask(t, "Some regular task")
+
+	rootCmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	rootCmd.SetErr(buf)
+	rootCmd.SetArgs([]string{"search", "--json", "nonexistentquery12345"})
+
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("search --json failed: %v", err)
+	}
+
+	var matches []model.Task
+	if err := json.Unmarshal(buf.Bytes(), &matches); err != nil {
+		t.Fatalf("invalid json: %v, output:\n%s", err, buf.String())
+	}
+	if len(matches) != 0 {
+		t.Fatalf("expected 0 matches, got %d", len(matches))
+	}
+}
