@@ -467,6 +467,9 @@ func checkDocumentedCommands(t *testing.T, label, md string) map[string]bool {
 		// into the command's flag set, so reusing one root would leak `-n 25`
 		// from one documented invocation into the next.
 		root := NewRootCmd()
+		// Cobra adds its default `completion` command during Execute, not at
+		// construction. The root README documents `monolog completion zsh`.
+		root.InitDefaultCompletionCmd()
 
 		target, rest, err := root.Find(fields[1:])
 		if err != nil {
