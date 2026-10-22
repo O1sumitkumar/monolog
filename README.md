@@ -23,6 +23,14 @@ go install github.com/maksmas/monolog@latest   # anywhere with Go
 
 ## Install
 
+### Shell completion
+
+```bash
+monolog completion zsh > "${fpath[1]}/_monolog"   # zsh
+monolog completion bash > /etc/bash_completion.d/monolog   # bash
+monolog completion fish > ~/.config/fish/completions/monolog.fish   # fish
+```
+
 ### Homebrew (macOS)
 
 ```bash
