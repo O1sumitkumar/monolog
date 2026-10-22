@@ -84,9 +84,6 @@ func newSearchCmd() *cobra.Command {
 			if jsonOutput {
 				enc := json.NewEncoder(cmd.OutOrStdout())
 				enc.SetIndent("", "  ")
-				if matches == nil {
-					matches = []model.Task{}
-				}
 				return enc.Encode(matches)
 			}
 
